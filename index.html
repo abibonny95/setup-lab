@@ -536,7 +536,8 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
 /* Freni (bb in convenzione interna: positivo = piu' freno davanti; il segno mostrato in GT7 e' opposto e si ottiene con INV.bb): il bias ideale segue la distribuzione statica piu' il trasferimento di carico in frenata (h/L * decelerazione).
    bbWf: passi per unita' di wf (0-1) rispetto a 50:50, ricavato dai vecchi offset per layout (FF 60:40 -> +1, RR 40:60 -> -1).
    bbCg: passi per unita' di baricentro stimato (-1..+1): piu' alto = piu' trasferimento sull'anteriore (h/L +-0.05 a ~1.2 g).
-   Ipotesi: lo zero del gioco e' trattato come "neutro per 50:50 e baricentro medio"; se e' gia' tarato sull'auto, i due termini vanno ridotti. */
+   Decisione (utente): in GT7 il bilanciamento parte sempre da 0 ed e' un grado di liberta' per compensare il comportamento (kit aggiuntivo), non una taratura sull'auto. Fino a una misura
+   i due termini sono quindi 0: il suggerimento e' 0 piu' i soli termini di stile (rotazione r) e fondo. Valori ~10 e ~.6 erano ipotesi mai misurate: se una prova li conferma, rimetterli qui. */
 /* Aerodinamica e PP. In GT7 l'aero non ha un effetto unico: la deportanza ANTERIORE alza i PP, quella POSTERIORE li abbassa (misure: Huracan GT3 +22 e -30 su tutto il range
    dei due assi; Ferrari 430 Scuderia somma +4.4). ppAeroF / ppAeroR: variazione dei PP spostando UN asse dal minimo al massimo del suo range, con l'altro asse fermo a meta'
    (metodo a croce attorno al centro). Con segno. 0 = non misurato: quell'asse non entra nei PP. Il modello e' lineare nella posizione dentro il range: sulla griglia 3x3 della
@@ -547,7 +548,7 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
    con i livelli come posizione nel range di ciascun asse (indipendente dalle unita' dei range, che l'utente puo' non aver ancora inserito). Soglia 0.76 e pendenza 63 PP per unita' di differenza
    vengono da UNA sola auto e da una sola fetta della griglia; sulla Huracan una soglia sul rapporto anteriore/posteriore in valori assoluti (0.82) descrive i dati ugualmente bene:
    le due forme si distinguono con una lettura anteriore massimo / posteriore minimo su un'altra auto. */
-const CAL={freqRear:1,arbPerLltd:20,bbWf:10,bbCg:.6,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.76,aeroBalK:63,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
+const CAL={freqRear:1,arbPerLltd:20,bbWf:0,bbCg:0,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.76,aeroBalK:63,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
 function gen(c,R,INV,lv){
  const tyF=TYRES.find(t=>t.id===c.tyre)||TYRES[4],tyR=TYRES.find(t=>t.id===(c.tyreR||c.tyre))||tyF;
  const gF=tyF.g,gR=tyR.g,g=(gF+gR)/2,L=layoutOf(c),T=TERRAINS[c.terrain],p=c.prof,st=STYLES[c.style];
