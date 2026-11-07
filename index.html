@@ -372,9 +372,11 @@ div.f>span:first-child{display:block}
   </div>
   <div class="card" id="aeroCard" hidden>
     <h2>Aerodinamica e PP</h2>
-    <p class="hint" style="margin:0 0 12px">Più deportanza dà più PP. Per contarla serve sapere quanti: in gioco, su questa auto e a parità di tutto il resto, leggi i PP con la deportanza al minimo e al massimo (anteriore e posteriore insieme) e inseriscili qui. Il valore attuale di carico aero va indicato negli intervalli (colonna Attuale): è quello con cui hai letto i PP attuali.</p>
-    <div class="pair"><label class="f">PP a deportanza minima<input type="number" id="ppAeroLo" inputmode="numeric" placeholder="es. 598"></label>
-    <label class="f">PP a deportanza massima<input type="number" id="ppAeroHi" inputmode="numeric" placeholder="es. 611"></label></div>
+    <p class="hint" style="margin:0 0 12px">Più deportanza non vuol dire più PP: l'anteriore li alza, il posteriore li abbassa. Per contarla servono quattro letture in gioco, a parità di tutto il resto: tieni un asse a metà del suo range, porta l'altro al minimo e poi al massimo e leggi i PP; poi ripeti scambiando gli assi. Il valore attuale di carico aero va indicato negli intervalli (colonna Attuale): è quello con cui hai letto i PP attuali.</p>
+    <div class="pair"><label class="f">Anteriore al minimo (posteriore a metà)<input type="number" id="ppAeroFLo" inputmode="decimal" step="any" placeholder="es. 701.37"></label>
+    <label class="f">Anteriore al massimo (posteriore a metà)<input type="number" id="ppAeroFHi" inputmode="decimal" step="any" placeholder="es. 723.15"></label></div>
+    <div class="pair"><label class="f">Posteriore al minimo (anteriore a metà)<input type="number" id="ppAeroRLo" inputmode="decimal" step="any" placeholder="es. 728.04"></label>
+    <label class="f">Posteriore al massimo (anteriore a metà)<input type="number" id="ppAeroRHi" inputmode="decimal" step="any" placeholder="es. 697.71"></label></div>
     <p class="hint" id="aeroSum"></p>
   </div>
   <div class="card">
@@ -534,10 +536,12 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
    bbWf: passi per unita' di wf (0-1) rispetto a 50:50, ricavato dai vecchi offset per layout (FF 60:40 -> +1, RR 40:60 -> -1).
    bbCg: passi per unita' di baricentro stimato (-1..+1): piu' alto = piu' trasferimento sull'anteriore (h/L +-0.05 a ~1.2 g).
    Ipotesi: lo zero del gioco e' trattato come "neutro per 50:50 e baricentro medio"; se e' gia' tarato sull'auto, i due termini vanno ridotti. */
-/* Aerodinamica e PP (GT7: piu' deportanza = piu' PP). ppAero: PP che separano deportanza minima e massima (media dei due assi, mossi insieme).
-   0 = non ancora misurato: con 0 l'aero non entra nei PP. Si misura in gioco su un'auto con aero regolabile: PP a deportanza minima e a massima, a parita' di tutto il resto.
+/* Aerodinamica e PP. In GT7 l'aero non ha un effetto unico: la deportanza ANTERIORE alza i PP, quella POSTERIORE li abbassa (misure: Huracan GT3 +22 e -30 su tutto il range
+   dei due assi; Ferrari 430 Scuderia somma +4.4). ppAeroF / ppAeroR: variazione dei PP spostando UN asse dal minimo al massimo del suo range, con l'altro asse fermo a meta'
+   (metodo a croce attorno al centro). Con segno. 0 = non misurato: quell'asse non entra nei PP. Il modello e' lineare nella posizione dentro il range: sulla griglia 3x3 della
+   Huracan 8 punti su 9 restano entro 2 PP (il nono, anteriore 450 / posteriore 500, scarta di ~15 PP e va rimisurato).
    aeroShare: quota della riduzione PP richiesta affidata all'aero quando l'utente lo usa come leva (ipotesi, non misurata). */
-const CAL={freqRear:1,arbPerLltd:20,bbWf:10,bbCg:.6,ppAero:0,aeroShare:.35};
+const CAL={freqRear:1,arbPerLltd:20,bbWf:10,bbCg:.6,ppAeroF:0,ppAeroR:0,aeroShare:.35};
 function gen(c,R,INV,lv){
  const tyF=TYRES.find(t=>t.id===c.tyre)||TYRES[4],tyR=TYRES.find(t=>t.id===(c.tyreR||c.tyre))||tyF;
  const gF=tyF.g,gR=tyR.g,g=(gF+gR)/2,L=layoutOf(c),T=TERRAINS[c.terrain],p=c.prof,st=STYLES[c.style];
@@ -638,23 +642,27 @@ function dModel(c,pl){
 }
 /* PP e aerodinamica. c.ae = {Rg: limiti utente, base: {dfF,dfR} livelli 0..1 suggeriti o scelti (prima della quota dfk), cur: {dfF,dfR} valori in auto quando sono stati letti i PP attuali}.
    Livello in auto = posizione nel range dell'utente; senza valore attuale si assume uguale al livello suggerito (contributo zero a dfk=100).
-   Contributo = ppAero * (livello previsto - livello attuale), medio sui due assi. Non viene scalato da lam: viene dalla misura diretta di ppAero.
-   I PP letti nel ciclo di verifica vanno presi con piano e valori aero applicati (altrimenti aggiorna i valori attuali). */
-function aeroMeans(c,pl){
+   Contributo = per ogni asse coefficiente * (livello previsto - livello attuale), con coefficiente anteriore e posteriore separati (con segno). Non viene scalato da lam:
+   viene dalla misura diretta. I PP letti nel ciclo di verifica vanno presi con piano e valori aero applicati (altrimenti aggiorna i valori attuali). */
+function aeroLevels(c,pl){
  const ae=c.ae;if(!ae||!ae.Rg||!has(c,'aero'))return null;
- const k=c.comp&&c.comp.aero&&pl.dfk!=null?clamp(pl.dfk,0,100)/100:1;let n=0,B=0,C=0;
- for(const a of ['dfF','dfR']){
+ const k=c.comp&&c.comp.aero&&pl.dfk!=null?clamp(pl.dfk,0,100)/100:1,out={k,F:null,R:null};
+ for(const [ax,a] of [['F','dfF'],['R','dfR']]){
   const b=ae.base&&ae.base[a],u=ae.Rg[a],cv=ae.cur&&ae.cur[a];
   if(typeof b!=='number'||!isFinite(b)||!u)continue;
   const span=u.max-u.min;
-  B+=b;C+=typeof cv==='number'&&isFinite(cv)&&span>0?clamp((cv-u.min)/span,0,1):b;n++;
+  out[ax]={B:b,C:typeof cv==='number'&&isFinite(cv)&&span>0?clamp((cv-u.min)/span,0,1):b};
  }
- return n?{k,B:B/n,C:C/n}:null;
+ return out.F||out.R?out:null;
 }
-function dAero(c,pl){
- const m=CAL.ppAero?aeroMeans(c,pl):null;
- return m?CAL.ppAero*(m.B*m.k-m.C):0;
+function dAeroAxes(c,pl){
+ const m=CAL.ppAeroF||CAL.ppAeroR?aeroLevels(c,pl):null,r={F:0,R:0};
+ if(m){if(m.F)r.F=(CAL.ppAeroF||0)*(m.F.B*m.k-m.F.C);if(m.R)r.R=(CAL.ppAeroR||0)*(m.R.B*m.k-m.R.C)}
+ return r;
 }
+const dAero=(c,pl)=>{const r=dAeroAxes(c,pl);return r.F+r.R};
+/* variazione dei PP per unita' di quota dfk (scala entrambi gli assi): positiva = ridurre la deportanza abbassa i PP, quindi la leva ha senso */
+const aeroSlope=m=>m?(CAL.ppAeroF||0)*(m.F?m.F.B:0)+(CAL.ppAeroR||0)*(m.R?m.R.B:0):0;
 const ppPred=(c,pl,lam)=>c.ppNow+lam*dModel(c,pl)+dAero(c,pl);
 function calibrate(c,pl,obs,lam){
  const d=dModel(c,pl);
@@ -665,11 +673,10 @@ function solvePlan(c,pl,lam,opt,Rg){
  const out=plDefault();out.balp=pl.balp;
  /* l'aero del setup suggerito conta comunque nel bilancio PP; solo se l'utente lo sceglie diventa anche una leva (opt.aero==='use') */
  let gap=c.pp-c.ppNow-dAero(c,out);
- if(opt.aero==='use'&&c.comp.aero&&CAL.ppAero>0&&gap<-.5&&Rg.dfk){
-  const m=aeroMeans(c,out);
-  if(m&&m.B>1e-6){
-   const target=dAero(c,out)+clamp(CAL.aeroShare,0,1)*gap;       /* contributo aero voluto, <= quello a dfk 100 */
-   out.dfk=clamp(Math.round(100*(target/CAL.ppAero+m.C)/m.B),Rg.dfk.min,100);
+ if(opt.aero==='use'&&c.comp.aero&&gap<-.5&&Rg.dfk){
+  const sl=aeroSlope(aeroLevels(c,out));                         /* PP per unita' di dfk: la leva si muove solo se scendere di quota abbassa i PP */
+  if(sl>1e-6){
+   out.dfk=clamp(Math.round(100*(1+clamp(CAL.aeroShare,0,1)*gap/sl)),Rg.dfk.min,100);   /* contributo aero voluto = quello a dfk 100 + quota del gap */
    gap=c.pp-c.ppNow-dAero(c,out);
   }
  }
@@ -733,8 +740,8 @@ const EN={
 'Obiettivo PP':'PP target','Attuali':'Current','Target':'Target','Previsti':'Predicted',
 'Strategia':'Strategy','Ripartizione della riduzione':'How to split the reduction','Metodo per ridurre la potenza':'Method to reduce power','Posizione della zavorra':'Ballast position',
 'Calcola piano':'Calculate plan','Aerodinamica':'Aerodynamics','Solo conteggio':'Count only','Usa come leva':'Use as a lever','Aerodinamica e PP':'Aerodynamics and PP',
-'PP a deportanza minima':'PP at minimum downforce','PP a deportanza massima':'PP at maximum downforce',
-'Più deportanza dà più PP. Per contarla serve sapere quanti: in gioco, su questa auto e a parità di tutto il resto, leggi i PP con la deportanza al minimo e al massimo (anteriore e posteriore insieme) e inseriscili qui. Il valore attuale di carico aero va indicato negli intervalli (colonna Attuale): è quello con cui hai letto i PP attuali.':'More downforce gives more PP. To count it you need to know how many: in the game, on this car and with everything else equal, read the PP with downforce at minimum and at maximum (front and rear together) and enter them here. The current downforce value goes in the ranges section (Current column): it is the one you had when you read the current PP.','Piano':'Plan','Verifica PP':'Check PP',
+'Anteriore al minimo (posteriore a metà)':'Front at minimum (rear at mid-range)','Anteriore al massimo (posteriore a metà)':'Front at maximum (rear at mid-range)','Posteriore al minimo (anteriore a metà)':'Rear at minimum (front at mid-range)','Posteriore al massimo (anteriore a metà)':'Rear at maximum (front at mid-range)',
+'Più deportanza non vuol dire più PP: l\'anteriore li alza, il posteriore li abbassa. Per contarla servono quattro letture in gioco, a parità di tutto il resto: tieni un asse a metà del suo range, porta l\'altro al minimo e poi al massimo e leggi i PP; poi ripeti scambiando gli assi. Il valore attuale di carico aero va indicato negli intervalli (colonna Attuale): è quello con cui hai letto i PP attuali.':'More downforce does not mean more PP: the front raises them, the rear lowers them. To count it you need four readings in the game, with everything else equal: keep one axle at the middle of its range, take the other to minimum and then to maximum and read the PP; then repeat swapping the axles. The current downforce value goes in the ranges section (Current column): it is the one you had when you read the current PP.',
 'Imposta questi valori nel gioco (piano e, se l\'aero è regolabile, anche i valori di deportanza del setup) e leggi i PP che mostra. Inseriscili qui: l\'app corregge la stima e propone un nuovo piano, finché i PP coincidono con il target.':'Enter these values in the game (the plan and, if downforce is adjustable, the setup\'s downforce values too) and read the PP it shows. Type them here: the app corrects its estimate and proposes a new plan until the PP match the target.',
 'PP letti':'PP read','Ricalcola con i PP letti':'Recalculate with the PP read','Azzera calibrazione':'Reset calibration','Genera setup con questo piano':'Generate setup with this plan',
 'Il piano PP è cambiato dopo l\'ultima generazione del setup. Rigenera per applicare peso e potenza effettivi.':'The PP plan changed after the setup was last generated. Regenerate to apply the effective weight and power.','Rigenera ora':'Regenerate now',
@@ -894,10 +901,10 @@ const INFO=[
  d:['Più basso: meno potenza di punta e meno PP.','Lower: less peak power and fewer PP.'],
  x:['Taglia soprattutto la potenza ai regimi alti, quindi perdi più velocità massima che accelerazione.','It mostly cuts high-rev power, so you lose more top speed than acceleration.']},
 {id:'dfk',t:['Carico aero: quota del suggerito','Downforce: share of suggested'],
- w:['Quota del livello di deportanza suggerito che il setup usa (100% = tutto). Serve a recuperare PP senza toccare potenza e peso: più deportanza = più PP.','Share of the suggested downforce level the setup uses (100% = all of it). It recovers PP without touching power or weight: more downforce = more PP.'],
- u:['Più alta: più deportanza (e più PP), meno velocità massima.','Higher: more downforce (and more PP), less top speed.'],
- d:['Più bassa: meno PP, più velocità massima, meno grip nelle curve veloci.','Lower: fewer PP, more top speed, less grip in fast corners.'],
- x:['L\'effetto sui PP dipende dal coefficiente misurato in gioco (non ancora calibrato: finché è zero l\'aero non entra nei PP stimati). Per il calcolo vale il valore attuale che inserisci negli intervalli.','The PP effect depends on the coefficient measured in game (not calibrated yet: while it is zero downforce does not enter the PP estimate). The calculation uses the current value you enter in the ranges section.']},
+ w:['Quota del livello di deportanza suggerito che il setup usa su entrambi gli assi (100% = tutto).','Share of the suggested downforce level the setup uses on both axles (100% = all of it).'],
+ u:['Più alta: più deportanza su entrambi gli assi, più aderenza e stabilità, meno velocità massima.','Higher: more downforce on both axles, more grip and stability, less top speed.'],
+ d:['Più bassa: meno deportanza, più velocità massima, meno aderenza nelle curve veloci.','Lower: less downforce, more top speed, less grip in fast corners.'],
+ x:['Sui PP l\'anteriore pesa in positivo e il posteriore in negativo, quindi su alcune auto ridurre la deportanza di entrambi gli assi fa salire i PP: vale il calcolo mostrato nella scheda Aerodinamica e PP. Finché i coefficienti non sono inseriti l\'aero non entra nei PP stimati.','On PP the front counts positively and the rear negatively, so on some cars lowering downforce on both axles raises the PP: the calculation shown in the Aerodynamics and PP card applies. Until the coefficients are entered downforce does not enter the estimated PP.']},
 {id:'bal',t:['Zavorra: peso','Ballast: weight'],
  w:['Regola il peso della zavorra a bordo. Serve per rispettare un peso minimo e per avvicinare due auto con caratteristiche diverse.','Adjusts the weight of ballast carried by the car. Useful for meeting minimum weight and for bringing two cars of different character closer together.'],
  u:['Più alto: più peso, meno PP, accelerazione e frenata peggiori.','Higher: more weight, fewer PP, worse acceleration and braking.'],
@@ -967,9 +974,12 @@ const FORM=['stabL','stabH','rotL','rotM','rotH','carName','engine','drive','uW'
 const KEY='setup-lab-v3';
 let st={terrain:'asfalto',style:'neutro',circuit:'spa',prof:{...CIRCUITS.spa.p}};
 let R=defRanges(),INV={toe:true,bb:true},S={},B={},meta={r:0,L:'FR',g:4},car=null,carE=null;
-/* PP letti in gioco a deportanza minima/massima per questa vettura: ppAero = hi - lo (0 se mancano o sono incoerenti) */
-let ppAeroIn={lo:null,hi:null};
-const setAeroPP=()=>{const d=(ppAeroIn.hi||0)-(ppAeroIn.lo||0);CAL.ppAero=isFinite(d)&&ppAeroIn.lo!=null&&ppAeroIn.hi!=null&&d>0?d:0};
+/* PP letti in gioco per questa vettura, metodo a croce: asse anteriore al minimo/massimo con il posteriore a meta' (fLo, fHi) e viceversa (rLo, rHi).
+   Coefficienti = differenze (0 se mancano) */
+let ppAeroIn={fLo:null,fHi:null,rLo:null,rHi:null};
+const aeroDiff=(a,b)=>typeof a==='number'&&typeof b==='number'&&isFinite(a)&&isFinite(b)?b-a:0;
+const setAeroPP=()=>{CAL.ppAeroF=aeroDiff(ppAeroIn.fLo,ppAeroIn.fHi);CAL.ppAeroR=aeroDiff(ppAeroIn.rLo,ppAeroIn.rHi)};
+const AEROIDS={ppAeroFLo:'fLo',ppAeroFHi:'fHi',ppAeroRLo:'rLo',ppAeroRHi:'rHi'};
 let plan=plDefault(),lam=1,hist=[],opt={share:.6,shareKey:'bil',method:'ecu',pos:'auto',aero:'off'},stale=false,ppState='',lv={dfF:null,dfR:null,ts:null,rsa:null},lvAuto={},cur={};
 let A=null,prevSet=null,calibOs=0,measAt='';
 const CHK=['aero','cEcu','cRst','cBal','cLsd','cTv','cBrk','cTrans','c4ws'];
@@ -997,7 +1007,7 @@ function apply(d){
  ['stabL','stabH','rotL','rotM','rotH'].forEach(i=>{if(!(i in d.f))$('#'+i).value=''});if(d.f&&!('cg' in d.f))$('#cg').value='auto';
  Object.entries(d.f).forEach(([i,v])=>{if(CHK.includes(i))$('#'+i).checked=v;else if($('#'+i))$('#'+i).value=v});
  st=d.st;R={...defRanges(),...d.R};INV={...INV,...(d.INV||{})};if(d.invv!==2)INV.bb=true; /* migrazione: il vecchio default (positivo = anteriore) non corrispondeva a GT7 */ plan={...plDefault(),...(d.plan||{})};lam=d.lam||1;hist=d.hist||[];opt={...opt,...(d.opt||{})};
- ppAeroIn={lo:null,hi:null,...(d.aeroPP||{})};setAeroPP();lv={dfF:null,dfR:null,ts:null,rsa:null,...(d.lv||{})};lvAuto=d.lvAuto||{};cur=d.cur||{};S=d.S||{};B=d.B||{};meta=d.meta||meta;A=d.A||null;prevSet=d.prevSet||null;measAt=d.measAt||'';
+ ppAeroIn={fLo:null,fHi:null,rLo:null,rHi:null,...(d.aeroPP||{})};setAeroPP();lv={dfF:null,dfR:null,ts:null,rsa:null,...(d.lv||{})};lvAuto=d.lvAuto||{};cur=d.cur||{};S=d.S||{};B=d.B||{};meta=d.meta||meta;A=d.A||null;prevSet=d.prevSet||null;measAt=d.measAt||'';
  ['uW','uP','uT'].forEach(i=>{const e=$('#'+i);if(e)e.dataset.prev=e.value});if(typeof syncLayout==='function'){syncLayout();syncWf();stabLab()}
 }
 function save(){try{localStorage.setItem(KEY,JSON.stringify(snap()))}catch(e){}}
@@ -1392,12 +1402,14 @@ $('#staleNote').hidden=!stale;
 /* riepilogo aero: livelli (posizione nei limiti dell'utente), contributo ai PP e avvisi su cio' che manca */
 function paintAero(){
  const on=!!car&&has(car,'aero');$('#aeroCard').hidden=!on;$('#aeroOpt').hidden=!on;if(!on)return;
- const m=aeroMeans(car,plan),pc=x=>Math.round(x*100)+'%',el=$('#aeroSum');
+ const m=aeroLevels(car,plan),pc=x=>Math.round(x*100)+'%',el=$('#aeroSum');
  if(!m){el.textContent=tr('Genera il setup per conoscere i livelli di deportanza suggeriti.','Generate the setup to get the suggested downforce levels.');return}
- const hasCur=cur.dfF!=null||cur.dfR!=null,lvTxt=tr(`Livello medio di deportanza: attuale ${hasCur?pc(m.C):'non indicato (si assume quello suggerito)'}, setup ${pc(m.B*m.k)}.`,`Mean downforce level: current ${hasCur?pc(m.C):'not entered (the suggested one is assumed)'}, setup ${pc(m.B*m.k)}.`);
- let t;
- if(!CAL.ppAero)t=tr('Coefficiente aero non ancora inserito: finché i PP letti a deportanza minima e massima mancano o sono incoerenti (il massimo deve superare il minimo), l\'aero non entra nei PP stimati.','Downforce coefficient not entered yet: until the PP read at minimum and maximum downforce are given and consistent (maximum must exceed minimum), downforce does not enter the PP estimate.');
- else{const d=dAero(car,plan);t=tr(`Contributo aero ai PP: ${d>=0?'+':'−'}${Math.abs(d).toFixed(1)} (coefficiente ${CAL.ppAero.toFixed(0)} PP tra minimo e massimo).`,`Downforce PP contribution: ${d>=0?'+':'−'}${Math.abs(d).toFixed(1)} (coefficient ${CAL.ppAero.toFixed(0)} PP between minimum and maximum).`)}
+ const ax=(k,a,nm)=>m[a]?`${nm}: ${tr('attuale','current')} ${cur[k]!=null?pc(m[a].C):tr('non indicato (si assume il suggerito)','not entered (the suggested one is assumed)')} → setup ${pc(m[a].B*m.k)}`:'';
+ const lvTxt=tr('Livelli di deportanza nel range','Downforce levels in the range')+' — '+[ax('dfF','F',tr('anteriore','front')),ax('dfR','R',tr('posteriore','rear'))].filter(Boolean).join('; ')+'.';
+ const sg=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1);let t;
+ if(!CAL.ppAeroF&&!CAL.ppAeroR)t=tr('Coefficienti aero non ancora inseriti: senza le quattro letture l\'aero non entra nei PP stimati.','Downforce coefficients not entered yet: without the four readings downforce does not enter the PP estimate.');
+ else{const d=dAeroAxes(car,plan);t=tr(`Contributo ai PP: anteriore ${sg(d.F)}, posteriore ${sg(d.R)}, totale ${sg(d.F+d.R)}. Su tutto il range: anteriore ${sg(CAL.ppAeroF)}, posteriore ${sg(CAL.ppAeroR)}.`,`PP contribution: front ${sg(d.F)}, rear ${sg(d.R)}, total ${sg(d.F+d.R)}. Over the full range: front ${sg(CAL.ppAeroF)}, rear ${sg(CAL.ppAeroR)}.`);
+  if(!(aeroSlope(m)>1e-6))t+=' '+tr('Su questa auto ridurre la deportanza di entrambi gli assi non abbassa i PP: la leva automatica non è disponibile (puoi comunque modificare i valori a mano, il calcolo ne tiene conto).','On this car lowering downforce on both axles does not lower the PP: the automatic lever is not available (you can still edit the values by hand and the calculation accounts for them).')}
  el.textContent=lvTxt+' '+t;
 }
 function renderPP(){
@@ -1410,7 +1422,7 @@ function renderPP(){
  else if(ppState==='same')txt=tr('Il piano non cambia: sei al limite di passo o di range. Ritocca a mano un valore e rileggi i PP.','The plan does not change: you are at a step or range limit. Adjust one value by hand and read the PP again.');
  else if(ppState==='done'){txt=tr('Target raggiunto con il piano attuale. Genera il setup per applicare peso e potenza effettivi.','Target reached with the current plan. Generate the setup to apply the effective weight and power.');cls='warn ok'}
  m.hidden=!txt;m.className=cls;m.textContent=txt;
- $('#ppAeroLo').value=ppAeroIn.lo==null?'':ppAeroIn.lo;$('#ppAeroHi').value=ppAeroIn.hi==null?'':ppAeroIn.hi;
+ for(const id in AEROIDS){const v=ppAeroIn[AEROIDS[id]];$('#'+id).value=v==null?'':v}
  const act=PL.filter(q=>car.comp[q.c]);
  $('#plan').innerHTML=act.length?act.map(planCell).join(''):`<p class="hint" style="margin:0">${tr('Nessun componente installato: il piano non ha parametri da regolare.','No component installed: the plan has nothing to adjust.')}</p>`;
  $('#hist').innerHTML=hist.length?hist.map((h,i)=>{
@@ -1455,8 +1467,8 @@ document.addEventListener('click',e=>{
  if(b.id==='regenNow'){regenerate(true)}
 });
 document.addEventListener('input',e=>{
- const t=e.target;if(t.id!=='ppAeroLo'&&t.id!=='ppAeroHi')return;
- const v=parseFloat(t.value);ppAeroIn[t.id==='ppAeroLo'?'lo':'hi']=isFinite(v)?v:null;
+ const t=e.target;if(!AEROIDS[t.id])return;
+ const v=parseFloat(t.value);ppAeroIn[AEROIDS[t.id]]=isFinite(v)?v:null;
  setAeroPP();ppState='';stale=true;paintPP();save();
 });
 document.addEventListener('input',e=>{
