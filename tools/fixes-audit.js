@@ -26,7 +26,7 @@ function main() {
     'Sottosterzo in uscita': ['os', 1], 'Sovrasterzo in uscita': ['os', -1], 'Sottosterzo ad alta velocità': ['os', 1], 'Sovrasterzo ad alta velocità': ['os', -1],
     'Instabile ad alta velocità': ['stab', 1] };
   /* contraddizioni note tra FIXES e pesi di FX, da risolvere con una decisione di modello (non sono bug di segno certi): non fanno fallire il controllo */
-  const OPEN = new Set(['Instabile ad alta velocità|rhR']);   /* la correzione abbassa rhR, ma FX.rhR ha stab:+.2 (rhR piu' alto = piu' stabile) */
+  const OPEN = new Set([]);   /* ex 'Instabile ad alta velocita|rhR': risolta togliendo rhR dalla correzione e il termine stab da FX.rhR (altezza: nessun effetto di stabilita' dimostrato) */
   const INV = { toe: true, bb: true }, R = X.defRanges(), b50 = { os: 50, turn: 50, stab: 50, trac: 50, brk: 50, grip: 50 }, bad = [], opp = [], open = [], notes = [], rdep = [];
   /* limiti dell'utente allargati (x3 attorno al default, stesso passo): se le correzioni dipendessero dai limiti, le variazioni delle barre cambierebbero */
   const Rw = {}; for (const k in R) { const h = R[k].max - R[k].min; Rw[k] = { min: R[k].min - h, max: R[k].max + h, step: R[k].step } }

@@ -503,7 +503,8 @@ const defRanges=()=>({...Object.fromEntries([...P,...PL].map(p=>[p.k,{min:p.r[0]
 const has=(c,n)=>{const i=(c&&c.inst)||{};return !n||(n==='height'?(i.susp==='full'||i.susp==='height'):n==='susp'?i.susp==='full':!!i[n])};
 const invOf=(q,INV)=>(q.toe&&INV.toe)||(q.bbk&&INV.bb);
 /* effetti per parametro: peso per variazione dell'intero range. os>0 = più sovrasterzo */
-const FX={rhF:{grip:-.3,turn:-.2},rhR:{grip:-.3,stab:.2},
+/* altezza: anteriore piu' alto = piu' sottosterzo, posteriore piu' alto = piu' sovrasterzo (testo del gioco: anteriore piu' basso -> sovrasterzo, posteriore piu' basso -> sottosterzo); effetto volutamente piccolo (prova in gioco: 70->90 mm dietro senza differenza apprezzabile in stabilita'), quindi nessun termine di stabilita' */
+const FX={rhF:{grip:-.3,turn:-.2,os:-.3},rhR:{grip:-.3,os:.3},
  arbF:{os:-1,turn:.3,grip:-.2,stab:.2},arbR:{os:1,stab:-.3,trac:-.2,grip:-.2},
  compF:{turn:.4,os:-.3},compR:{os:.3,trac:-.3},extF:{turn:.3,brk:-.3},extR:{trac:.4,os:-.2},
  freqF:{os:-.7,turn:.3,grip:-.2},freqR:{os:.7,stab:-.2,grip:-.2},
@@ -577,7 +578,7 @@ function gen(c,R,INV,lv){
  o.camF=(.9+.18*gF+(FF?.3:0)+.3*r+cadj)*T.cam; o.camR=(.6+.14*gR-.3*r+cadj)*T.cam;
  o.toeF=.10*r*(1-.5*p.str); o.toeR=-.15+.12*r+(L==='RR'?-.05:0);
  const rhf=clamp(.12+T.rh+.25*p.bump-.08*p.fast,0,1);
- o.rhF=80+rhf*60; o.rhR=80+clamp(rhf+.04-.03*r,0,1)*60;
+ o.rhF=80+rhf*60; o.rhR=80+clamp(rhf+.04+.05*r,0,1)*60;   /* piu' rotazione voluta (r>0): posteriore un po' piu' alto dell'anteriore (anteriore relativamente piu' basso -> sovrasterzo) */
  const [i0,a1,b0]=LSD0[L], nmt=(c.torque||c.power*1.3)/c.weight*1000;
  o.lsdI=(i0+clamp((nmt-250)/100,0,6)+(c.asp==='ev'?3:c.asp==='turbo'?1:0))*T.li;
  o.lsdA=(a1+LSDA_SIGN[L]*5*r+st.la+(c.asp==='ev'?-4:0))*T.la;
@@ -830,7 +831,7 @@ const INFO=[
  w:['Regola la distanza tra auto e suolo. Anteriore e posteriore sono indipendenti, quindi cambiano anche il carico tra i due assi.','Sets the distance between car and ground. Front and rear are independent, so they also shift load between the two axles.'],
  u:['Più alta: meno rischio di danni su cordoli e dossi, baricentro più alto, meno grip.','Higher: less risk of damage on kerbs and bumps, higher center of gravity, less grip.'],
  d:['Più bassa: baricentro più basso e più grip, ma più rischio di toccare cordoli e ostacoli.','Lower: lower center of gravity and more grip, but more risk of hitting kerbs and objects.'],
- x:['In generale conviene stare bassi. Alza l\'auto su tracciati con molti dossi, su sterrato e su neve.','Lower is generally better. Raise the car on bumpy tracks, gravel and snow.']},
+ x:['In generale conviene stare bassi, ma non al limite. Alza l\'auto su tracciati con molti dossi, su sterrato e su neve. Una piccola differenza tra i due assi sposta il bilanciamento: anteriore più basso dà più sovrasterzo, posteriore più basso più sottosterzo (effetto modesto).','Lower is generally better, but not at the limit. Raise the car on bumpy tracks, gravel and snow. A small front/rear difference shifts the balance: a lower front gives more oversteer, a lower rear more understeer (modest effect).']},
 {id:'arb',t:['Barra antirollio','Anti-roll bar'],
  w:['Regola la rigidità della barra che collega le ruote sinistra e destra, limitando il rollio in curva.','Adjusts the stiffness of the bar linking the left and right wheels, limiting body roll in corners.'],
  u:['Più rigida davanti: più facile sottosterzare. Più rigida dietro: più facile sovrasterzare.','Stiffer at the front: easier to understeer. Stiffer at the rear: easier to oversteer.'],
@@ -987,7 +988,7 @@ const FIXES=[
  ['Poca trazione in uscita',{lsdI:.05,lsdA:.08,arbR:-.05,compR:-.04},'Frenata e uscita'],
  ['Sottosterzo ad alta velocità',{dfF:.1,dfR:-.05,camF:.02},'Alta velocità'],
  ['Sovrasterzo ad alta velocità',{dfR:.1,dfF:-.05,toeR:-.01},'Alta velocità'],
- ['Instabile ad alta velocità',{dfR:.08,dfF:.03,toeR:-.015,rhR:-.03},'Alta velocità'],
+ ['Instabile ad alta velocità',{dfR:.08,dfF:.03,toeR:-.015},'Alta velocità'],
  ['Instabile su dossi e cordoli',{freqF:-.02,freqR:-.02,extF:-.07,extR:-.07,rhF:.08,rhR:.08},'Fondo e sospensioni'],
  ['Troppo rigida sui cordoli',{compF:-.08,compR:-.08,extF:-.06,extR:-.06,freqF:-.03,freqR:-.03},'Fondo e sospensioni'],
  ['Tocca il fondo',{rhF:.1,rhR:.1,freqF:.03,freqR:.03},'Fondo e sospensioni']];
