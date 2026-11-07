@@ -30,6 +30,7 @@ const mkCar = (o = {}) => ({ name: 't', engine: 'F', drive: 'RWD', weight: 1300,
   ae: { Rg: E.defRanges(), base: { dfF: .5, dfR: .5 }, cur: { dfF: 20, dfR: 60 } }, ...o });
 const plan0 = () => ({ ...E.plDefault() });
 const Rg = E.defRanges();
+const CAL_MINF = .25;
 
 /* 1) valori noti: livelli base .5/.5, attuali 20/60 su range 0-100 -> livelli attuali .2/.6; anteriore +20, posteriore -30 su tutto il range */
 console.log('1) contributo aero con valori calcolati a mano');
@@ -37,13 +38,14 @@ setK(0, 0);
 near(E.dAero(mkCar(), plan0()), 0, 1e-12, 'coefficienti 0 -> contributo 0');
 setK(20, -30);
 near(E.dAero(mkCar(), plan0()), 9, 1e-9, 'dfk=100: 20*(0.5-0.2) + -30*(0.5-0.6) = 6 + 3');
-near(E.dAero(mkCar(), { ...plan0(), dfk: 50 }), 11.5, 1e-9, 'dfk=50: 20*(0.25-0.2) + -30*(0.25-0.6) = 1 + 10.5');
+/* limiti della leva: anteriore >= .25, posteriore >= .5; con base .5/.5 e dfk 50 l'anteriore va a .25 e il posteriore resta a .5 */
+near(E.dAero(mkCar(), { ...plan0(), dfk: 50 }), 4, 1e-9, 'dfk=50: 20*(0.25-0.2) + -30*(0.5-0.6) = 1 + 3');
 { const a = E.dAeroAxes(mkCar(), plan0()); near(a.F, 6, 1e-9, 'asse anteriore 6'); near(a.R, 3, 1e-9, 'asse posteriore 3') }
 setK(20, 0); near(E.dAero(mkCar(), plan0()), 6, 1e-9, 'solo anteriore misurato: il posteriore non entra');
 setK(0, -30); near(E.dAero(mkCar(), plan0()), 3, 1e-9, 'solo posteriore misurato: l\'anteriore non entra');
 setK(20, -30);
 near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: {} } }), plan0()), 0, 1e-9, 'senza valori attuali: contributo 0 a dfk=100');
-near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: {} } }), { ...plan0(), dfk: 50 }), 2.5, 1e-9, 'senza valori attuali, dfk=50: 20*(0.25-0.5) + -30*(0.25-0.5) = -5 + 7.5');
+near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: {} } }), { ...plan0(), dfk: 50 }), -5, 1e-9, 'senza valori attuali, dfk=50: 20*(0.25-0.5) + -30*(0.5-0.5) = -5 + 0');
 near(E.dAero(mkCar({ ae: { ...mkCar().ae, base: {} } }), plan0()), 0, 1e-12, 'senza livelli generati: 0');
 near(E.dAero(mkCar({ ae: { ...mkCar().ae, base: { dfF: .5 } } }), plan0()), 6, 1e-9, 'solo livello anteriore noto: conta solo l\'anteriore');
 near(E.dAero(mkCar({ inst: { ...mkCar().inst, aero: false } }), plan0()), 0, 1e-12, 'aero non installata: 0');
@@ -51,7 +53,8 @@ near(E.dAero(mkCar({ ae: undefined }), plan0()), 0, 1e-12, 'senza contesto aero:
 { const c = mkCar(); c.ae = { ...c.ae, Rg: { ...c.ae.Rg, dfF: { min: 0, max: 200, step: 1 }, dfR: { min: 0, max: 200, step: 1 } } };
   near(E.dAero(c, plan0()), 20 * (.5 - .1) + -30 * (.5 - .3), 1e-9, 'limiti 0-200: livelli attuali 0.1/0.3'); }
 near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: { dfF: -50, dfR: 900 } } }), plan0()), 20 * (.5 - 0) + -30 * (.5 - 1), 1e-9, 'valori attuali fuori range: clamp 0..1');
-near(E.aeroSlope(E.aeroLevels(mkCar(), plan0())), 20 * .5 + -30 * .5, 1e-9, 'pendenza rispetto alla quota: 20*0.5 + -30*0.5 = -5');
+near(E.aeroSlope(E.aeroLevels(mkCar(), plan0())), 20 * .5, 1e-9, 'pendenza rispetto alla quota: solo l\'anteriore (il posteriore a .5 e\' gia\' al limite) 20*0.5');
+near(E.aeroSlope(E.aeroLevels(mkCar({ ae: { ...mkCar().ae, base: { dfF: .8, dfR: .8 } } }), plan0())), 20 * .8 + -30 * .8, 1e-9, 'pendenza con entrambi gli assi sopra i limiti: 20*0.8 + -30*0.8');
 
 /* 1a) penalita' di equilibrio calcolata a mano: livelli attuali al centro (differenza 0, nessuna penalita'), setup con anteriore al massimo e posteriore al minimo
    (differenza di livello 1.0): 63 * (1.0 - 0.76) = 15.12 PP in meno */
@@ -123,9 +126,14 @@ const SP = mode => ({ share: .6, method: 'ecu', pos: 'auto', aero: mode });
   /* caso Huracan: pendenza negativa -> la leva non deve muoversi */
   setK(21.78, -30.33);
   const hc = mkCar({ ae: { Rg, base: { dfF: .5, dfR: .5 }, cur: { dfF: 50, dfR: 50 } } });
-  ok(E.aeroSlope(E.aeroLevels(hc, plan0())) < 0, 'coefficienti Huracan: pendenza negativa');
-  const h = E.solvePlan(hc, pl, 1, SP('use'), Rg).plan;
+  const hc8 = mkCar({ ae: { Rg, base: { dfF: .8, dfR: .8 }, cur: { dfF: 80, dfR: 80 } } });
+  ok(E.aeroSlope(E.aeroLevels(hc8, plan0())) < 0, 'coefficienti Huracan, livelli .8/.8: pendenza negativa');
+  const h = E.solvePlan(hc8, pl, 1, SP('use'), Rg).plan;
   ok(h.dfk === 100, 'pendenza negativa: la leva automatica resta ferma (ridurre entrambi gli assi farebbe salire i PP)');
+  /* livelli .5/.5: il posteriore e' al limite, si muove solo l'anteriore, quindi la leva ha senso e il posteriore resta fermo */
+  { const m = E.aeroLevels(hc, plan0()); ok(E.aeroSlope(m) > 0, 'Huracan .5/.5: pendenza positiva (solo anteriore)');
+    const h5 = E.solvePlan(hc, pl, 1, SP('use'), Rg).plan, m5 = E.aeroLevels(hc, h5);
+    ok(h5.dfk < 100, 'Huracan .5/.5: la leva si muove'); near(m5.R.E, .5, 1e-12, 'posteriore fermo al limite .5'); ok(m5.F.E >= CAL_MINF - 1e-9, 'anteriore non sotto il 25%'); }
   /* con entrambi i coefficienti a 0 la leva non si muove */
   setK(0, 0); ok(E.solvePlan(c, pl, 1, SP('use'), Rg).plan.dfk === 100, 'coefficienti 0: dfk resta 100');
   /* bersaglio sopra i PP attuali: piano neutro */
@@ -138,10 +146,14 @@ console.log('3b) gen con quota dfk');
 { const c = mkCar(), inv = { toe: true, bb: true }, lvN = { dfF: null, dfR: null, ts: null, rsa: null };
   const g100 = E.gen(E.effCar(c, plan0()), Rg, inv, lvN), g50 = E.gen(E.effCar(c, { ...plan0(), dfk: 50 }), Rg, inv, lvN);
   ok(g100.S.dfF > 10 && g100.S.dfR > 10, 'caso di prova con deportanza suggerita significativa');
-  near(g50.S.dfF, g100.S.dfF * .5, 1, 'dfk 50 dimezza dfF'); near(g50.S.dfR, g100.S.dfR * .5, 1, 'dfk 50 dimezza dfR');
+  const fl = (v, f) => Math.max(v * .5, Math.min(v, f));
+  near(g50.S.dfF, fl(g100.S.dfF, 25), 1, 'dfk 50 dimezza dfF fino al limite 25'); near(g50.S.dfR, fl(g100.S.dfR, 50), 1, 'dfk 50 dimezza dfR fino al limite 50');
+  ok(g50.S.dfF >= 25 - 1 && g50.S.dfR >= 50 - 1, 'limiti leva rispettati (anteriore 25, posteriore 50)');
+  { const g1 = E.gen(E.effCar(c, { ...plan0(), dfk: 1 }), Rg, inv, lvN); ok(g1.S.dfF >= 24 && g1.S.dfR >= 49, 'dfk al minimo: i limiti reggono'); }
   near(g50.auto.dfF, g100.auto.dfF, 1e-12, 'auto[] resta il livello pieno');
   const gl = E.gen(E.effCar(c, { ...plan0(), dfk: 50 }), Rg, inv, { ...lvN, dfF: .8, dfR: .6 });
-  near(gl.S.dfF, 40, 1, 'livello utente 0.8 x dfk 50 = 40'); near(gl.S.dfR, 30, 1, 'livello utente 0.6 x dfk 50 = 30'); }
+  near(gl.S.dfF, 40, 1, 'livello utente 0.8 x dfk 50 = 40'); near(gl.S.dfR, 50, 1, 'livello utente 0.6 x dfk 50 = 30, alzato al limite 50 solo perche\' il prodotto scende sotto il limite ma il livello utente (60) lo supera');
+  const gu = E.gen(E.effCar(c, { ...plan0(), dfk: 50 }), Rg, inv, { ...lvN, dfR: .4 }); near(gu.S.dfR, 40, 1, 'livello utente gia\' sotto il limite (.4): non viene alzato'); }
 
 /* 4) griglia di invarianti */
 console.log('4) invarianti su griglia (trazione, aero, coefficienti, gap)');
