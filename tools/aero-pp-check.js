@@ -53,25 +53,49 @@ near(E.dAero(mkCar({ ae: undefined }), plan0()), 0, 1e-12, 'senza contesto aero:
 near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: { dfF: -50, dfR: 900 } } }), plan0()), 20 * (.5 - 0) + -30 * (.5 - 1), 1e-9, 'valori attuali fuori range: clamp 0..1');
 near(E.aeroSlope(E.aeroLevels(mkCar(), plan0())), 20 * .5 + -30 * .5, 1e-9, 'pendenza rispetto alla quota: 20*0.5 + -30*0.5 = -5');
 
-/* 1b) misure reali: Lamborghini Huracan GT3 '15, anteriore 350-450, posteriore 500-700, PP al centro 713.18.
+/* 1a) penalita' di equilibrio calcolata a mano: livelli attuali al centro (differenza 0, nessuna penalita'), setup con anteriore al massimo e posteriore al minimo
+   (differenza di livello 1.0): 63 * (1.0 - 0.76) = 15.12 PP in meno */
+console.log("1a) penalita' di equilibrio con valori a mano");
+{ setK(22, -30);
+  const rg = { ...Rg, dfF: { min: 350, max: 450, step: 1 }, dfR: { min: 500, max: 700, step: 1 } };
+  const c = mkCar({ ae: { Rg: rg, base: { dfF: 1, dfR: 0 }, cur: { dfF: 400, dfR: 600 } } }), a = E.dAeroAxes(c, plan0());
+  near(a.F, 22 * .5, 1e-9, 'lineare anteriore 22*(1-0.5)'); near(a.R, -30 * (0 - .5), 1e-9, 'lineare posteriore -30*(0-0.5)');
+  near(a.diff, 1, 1e-9, 'differenza di livello del setup'); near(a.pen, 15.12, 1e-9, 'penalita 63*(1-0.76)'); near(a.bal, -15.12, 1e-9, 'contributo equilibrio = -penalita (attuale senza penalita)');
+  near(E.dAero(c, plan0()), 11 + 15 - 15.12, 1e-9, 'totale 11 + 15 - 15.12');
+  /* se i PP attuali erano gia' stati letti con la penalita', il piano non la paga due volte */
+  const c2 = mkCar({ ae: { Rg: rg, base: { dfF: 1, dfR: 0 }, cur: { dfF: 450, dfR: 500 } } });
+  near(E.dAeroAxes(c2, plan0()).bal, 0, 1e-9, 'attuale = setup: equilibrio 0');
+  /* sotto soglia: nessuna penalita' */
+  const c3 = mkCar({ ae: { Rg: rg, base: { dfF: .5, dfR: .5 }, cur: { dfF: 400, dfR: 600 } } });
+  near(E.dAeroAxes(c3, plan0()).pen, 0, 1e-12, 'differenza 0: nessuna penalita');
+  /* solo un asse noto: nessuna penalita' */
+  near(E.dAeroAxes(mkCar({ ae: { Rg: rg, base: { dfF: 1 }, cur: { dfF: 400, dfR: 600 } } }), plan0()).bal, 0, 1e-12, 'asse posteriore ignoto: nessuna penalita');
+  setK(0, 0); near(E.dAeroAxes(c, plan0()).bal, 0, 1e-12, 'coefficienti 0: aero fuori dai PP, penalita compresa'); }
+
+/* 1b) misure reali: Lamborghini Huracan GT3 '15, anteriore 350-450, posteriore 500-700, PP al centro 713.18 (22 punti: griglia 3x3 piu' due fette fini).
    Coefficienti dal metodo a croce attorno al centro (un asse al minimo/massimo, l'altro a meta'). */
-console.log("1b) Huracan GT3: modello lineare contro la griglia misurata 3x3");
-{ const meas = { '350/500': 715.61, '350/600': 701.37, '350/700': 686.84, '400/500': 728.04, '400/600': 713.18, '400/700': 697.71, '450/500': 723.52, '450/600': 723.15, '450/700': 708.37 };
+console.log("1b) Huracan GT3: modello contro le 22 misure");
+{ const meas = { '350/500': 715.61, '350/600': 701.37, '350/700': 686.84, '400/500': 728.04, '400/600': 713.18, '400/700': 697.71, '450/500': 723.52, '450/600': 723.15, '450/700': 708.37,
+    '450/520': 727.09, '450/540': 729.84, '450/560': 730.75, '450/580': 728.63, '450/620': 718.44, '450/640': 716.16, '450/660': 714.93, '450/680': 711.88,
+    '370/700': 690.91, '390/700': 695.26, '410/700': 699.68, '430/700': 704.60, '440/700': 706.61 };
   const kF = meas['450/600'] - meas['350/600'], kR = meas['400/700'] - meas['400/500'];
   near(kF, 21.78, 1e-9, 'coefficiente anteriore dal metodo a croce'); near(kR, -30.33, 1e-9, 'coefficiente posteriore dal metodo a croce');
-  setK(kF, kR);
   const rg = { ...Rg, dfF: { min: 350, max: 450, step: 1 }, dfR: { min: 500, max: 700, step: 1 } };
-  let worst = 0, worstKey = '', outlier = null;
-  for (const key in meas) {
-    const [f, r] = key.split('/').map(Number);
-    const c = mkCar({ ppNow: 713.18, pp: 713.18, ae: { Rg: rg, base: { dfF: (f - 350) / 100, dfR: (r - 500) / 200 }, cur: { dfF: 400, dfR: 600 } } });
-    const err = E.ppPred(c, plan0(), 1) - meas[key];
-    if (key === '450/500') { outlier = err; continue }   /* punto incoerente con gli altri otto: da rileggere in gioco */
-    if (Math.abs(err) > worst) { worst = Math.abs(err); worstKey = key }
-  }
-  console.log(`   errore massimo sugli 8 punti coerenti: ${worst.toFixed(2)} PP (${worstKey}); punto 450/500: ${outlier.toFixed(1)} PP di scarto (da rileggere)`);
-  ok(worst <= 2.0, `Huracan: 8 punti coerenti entro 2 PP dal modello lineare (peggiore ${worst.toFixed(2)} a ${worstKey})`);
-  ok(Math.abs(outlier) > 10, 'il punto 450/500 resta incoerente (>10 PP): se rimisurato coerente, aggiornare questa nota'); }
+  const run = (withPen) => { let se = 0, worst = 0, wk = '', n = 0;
+    const thr = E.CAL.aeroBalK; if (!withPen) E.CAL.aeroBalK = 0;
+    setK(kF, kR);
+    for (const key in meas) { const [f, r] = key.split('/').map(Number);
+      const c = mkCar({ ppNow: 713.18, pp: 713.18, ae: { Rg: rg, base: { dfF: (f - 350) / 100, dfR: (r - 500) / 200 }, cur: { dfF: 400, dfR: 600 } } });
+      const e = E.ppPred(c, plan0(), 1) - meas[key]; se += e * e; n++; if (Math.abs(e) > worst) { worst = Math.abs(e); wk = key } }
+    E.CAL.aeroBalK = thr; return { rms: Math.sqrt(se / n), worst, wk } };
+  const lin = run(false), full = run(true);
+  console.log(`   solo lineare: errore quadratico medio ${lin.rms.toFixed(2)}, massimo ${lin.worst.toFixed(1)} (${lin.wk}); con penalita': ${full.rms.toFixed(2)}, massimo ${full.worst.toFixed(1)} (${full.wk})`);
+  ok(full.rms <= 1.3, `22 punti: errore quadratico medio con penalita' <= 1.3 (${full.rms.toFixed(2)})`);
+  ok(full.worst <= 3.0, `22 punti: errore massimo con penalita' <= 3 (${full.worst.toFixed(2)} a ${full.wk})`);
+  ok(lin.rms > 2 * full.rms, `la penalita' migliora nettamente il modello lineare (${lin.rms.toFixed(2)} contro ${full.rms.toFixed(2)})`);
+  /* i quattro punti della calibrazione a croce non devono essere toccati dalla penalita' (differenze di livello -0.5, 0.5, 0.5, -0.5, tutte sotto soglia) */
+  setK(kF, kR);
+  for (const [f, r] of [[350, 600], [450, 600], [400, 500], [400, 700]]) near(E.dAeroAxes(mkCar({ ae: { Rg: rg, base: { dfF: (f - 350) / 100, dfR: (r - 500) / 200 }, cur: { dfF: 400, dfR: 600 } } }), plan0()).pen, 0, 1e-12, `croce ${f}/${r}: nessuna penalita'`); }
 
 /* 2) ciclo di calibrazione: lam vero 1.3, PP letti con aero applicato */
 console.log('2) calibrazione lam con aero');
