@@ -23,4 +23,12 @@ for (const [nm, c, R] of [['Ferrari', car('F', 'RWD', 1300, 52, 510), RFer], ['H
   ok(S.lsdI >= 8 && S.lsdI <= 16, `${nm} lsdI ${S.lsdI} coerente col livello suggerito`);
   ok(S.lsdA >= 25 && S.lsdA <= 45, `${nm} lsdA ${S.lsdA} coerente col livello suggerito`);
 }
+/* tipo di auto: da corsa con gomme racing dure -> frequenza di base alzata (CAL.freqRace), non piu' saturata sul minimo di 3 Hz; da strada invariata */
+{ const E2 = vm.runInNewContext(html.slice(a, b) + ';({CAL,CAT_HZ})', {});
+  const cr = { ...car('M', 'AWD', 1250, 43, 600), cat: 'race' }, S = gen(cr, RHur), S0 = gen(car('M', 'AWD', 1250, 43, 600), RHur);
+  ok(S.freqF > 3.3 && S.freqF < 4.5, `Huracan da corsa: freqF ${S.freqF} non saturata al minimo`); ok(S.freqF >= S0.freqF + 0.3, `da corsa piu' rigida della stessa auto da strada (${S.freqF} contro ${S0.freqF})`);
+  ok(Math.abs(S.freqR - S.freqF) <= .3, 'frequenze ant./post. abbinate (manuale)');
+  const sc = gen({ ...car('F', 'RWD', 1300, 52, 510), cat: 'road' }, RFer), sd = gen(car('F', 'RWD', 1300, 52, 510), RFer); ok(sc.freqF === sd.freqF, 'tipo strada = comportamento precedente');
+  const cc = { ...car('F', 'RWD', 1300, 52, 510), cat: 'race', tyre: 'CM', tyreR: 'CM' }, sm = gen(cc, RFer), sn = gen({ ...cc, cat: 'road' }, RFer); ok(sm.freqF === sn.freqF, 'gomme non da corsa: nessun incremento');
+  ok(E2.CAT_HZ.race[0] === 3 && E2.CAT_HZ.race[1] === 5 && E2.CAT_HZ.road[0] === 1.75 && E2.CAT_HZ.road[1] === 3.75, 'range di default per categoria'); }
 console.log(`${n} controlli | falliti: ${fail}`); process.exit(fail ? 1 : 0);

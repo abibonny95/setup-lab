@@ -294,6 +294,7 @@ div.f>span:first-child{display:block}
     <p class="note">Il tuner regola solo ciò che la tua auto può regolare. Togli la spunta alle parti che non hai montato.</p>
     <div class="grid">
       <label class="f full">Sospensioni<select id="susp"><option value="full">Completamente regolabili</option><option value="height">Solo altezza regolabile</option><option value="none">Non regolabili</option></select></label>
+      <label class="f full">Tipo di auto<select id="cat"><option value="road">Sportiva o stradale preparata</option><option value="race">Già preparata da corsa (GT3, GT500, Gr.1…)</option></select></label>
       <label class="chk full"><input type="checkbox" id="cLsd" checked> Differenziale completamente regolabile</label>
       <label class="chk full"><input type="checkbox" id="cTv" checked> Differenziale centrale a vettorizzazione (solo integrale)</label>
       <label class="chk full"><input type="checkbox" id="aero"> Aerodinamica regolabile</label>
@@ -489,6 +490,9 @@ const GN0=6;
 const gearRange=(k,n)=>{const f=n>1?(k-1)/(n-1):0,l=(a,b)=>a*Math.pow(b/a,f);return [+l(2.4,.45).toFixed(3),+l(4.8,1.1).toFixed(3)]};
 function gearDefaults(n){const o={};for(let i=1;i<=10;i++){const [a,b]=gearRange(Math.min(i,n),n);o['g'+i]={min:a,max:b,step:.001}}return o}
 const PK=Object.fromEntries(P.map(p=>[p.k,p]));
+/* Tipo di auto: i range delle frequenze dipendono dalla categoria, non dalle gomme (misure dell'utente con gomme da corsa dure: Lancia Delta Integrale e Nissan GT-R 1.50-3.50,
+   Mazda RX-7, Ferrari 458 e Porsche 911 1.75-3.75, Ferrari 430 2.00-4.00, auto gia' da corsa come GT-R GT500 e Nissan R92CP 3.00-5.00). Default dei range, modificabili. */
+const CAT_HZ={road:[1.75,3.75],race:[3,5]};
 /* Parametri con valore assoluto (unita' del gioco): il generatore calcola il valore ottimo e lo LIMITA al range dell'utente (saturazione), senza riscalarlo.
    Gli altri (altezza, livelli aero, rapporti, velocita') sono posizioni nel range: i range reali variano molto da auto ad auto (altezza 55-80 contro 60-130 mm). Scelta dell'utente. */
 const ABS=new Set(['freqF','freqR','camF','camR','toeF','toeR','lsdI','lsdA','lsdB','fI','fA','fB','compF','compR','extF','extR','arbF','arbR','bb','split','rsa']);
@@ -535,6 +539,7 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
 /* CAL: costanti empiriche da calibrare con test in gioco (valori di partenza, NON misurati).
    freqRear: rapporto Hz posteriore/anteriore. Il manuale GT7 dice che abbinare le frequenze anteriore e posteriore rende la guida piu' fluida:
    si parte da 1.00 (la fonte documentale prevale sulla regola Olley, reale 1.10-1.20); con valori > 1 la rigidita' a rollio ceduta viene ripresa dalle barre.
+   freqRace: Hz aggiunti alla frequenza di base nelle auto gia' da corsa con gomme racing (manuale: 3-5 Hz per le auto da corsa con gomme da gara; la tabella per classe di gomma parte da 3.0 e con range 3-5 saturerebbe al minimo). IPOTESI, non misurata.
    arbPerLltd: passi di barra per unita' (0-1) di quota di rigidita' a rollio spostata dalle molle (ipotesi: ~0.05 di quota per passo). */
 /* Freni (bb in convenzione interna: positivo = piu' freno davanti; il segno mostrato in GT7 e' opposto e si ottiene con INV.bb): il bias ideale segue la distribuzione statica piu' il trasferimento di carico in frenata (h/L * decelerazione).
    bbWf: passi per unita' di wf (0-1) rispetto a 50:50, ricavato dai vecchi offset per layout (FF 60:40 -> +1, RR 40:60 -> -1).
@@ -551,7 +556,7 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
    Ferrari 430 Scuderia (24 punti, lineare puro: 0.56, anche con anteriore al massimo e posteriore al minimo, rapporto 0.79 < soglia). Adattamento congiunto: soglia 0.82, K 190,
    errore 0.71 (massimo 2.2) sulle due auto; la stessa penalita' sul livello relativo nel range darebbe 1.4 e sbaglia la Ferrari. Resta il limite di due sole auto: il rapporto dipende
    dai valori assoluti dei range inseriti (senza range l'aero non entra nei PP). */
-const CAL={freqRear:1,arbPerLltd:20,bbWf:0,bbCg:0,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.82,aeroBalK:190,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
+const CAL={freqRear:1,freqRace:.6,arbPerLltd:20,bbWf:0,bbCg:0,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.82,aeroBalK:190,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
 function gen(c,R,INV,lv){
  const tyF=TYRES.find(t=>t.id===c.tyre)||TYRES[4],tyR=TYRES.find(t=>t.id===(c.tyreR||c.tyre))||tyF;
  const gF=tyF.g,gR=tyR.g,g=(gF+gR)/2,L=layoutOf(c),T=TERRAINS[c.terrain],p=c.prof,st=STYLES[c.style];
@@ -565,7 +570,7 @@ function gen(c,R,INV,lv){
  r+=.08*lowDef;
  r=clamp(r,-1,1);
  const o={};
- const f0=gi=>(TF[gi]+(pp-600)/400*.35)*T.f*(wet?.9:1)*(1-.08*p.bump)*(1+.05*cg);
+ const f0=gi=>(TF[gi]+(c.cat==='race'&&gi>=6?CAL.freqRace:0)+(pp-600)/400*.35)*T.f*(wet?.9:1)*(1-.08*p.bump)*(1+.05*cg);
  /* Frequenze: il gioco chiede Hz, non N/m, e k = m(2*pi*f)^2 e' gia' proporzionale alla massa dell'asse: a parita' di f le molle seguono il peso.
     (Il vecchio sqrt(wf/.5) irrigidiva ancora l'asse pesante, k ~ wf^2.) Dietro si parte piu' alti (criterio di Olley, planata): CAL.freqRear.
     Quel bias sposta la rigidita' a rollio verso il posteriore (sfO < wf = tendenza al sovrasterzo): lo scarto dL viene ripreso dalle barre,
@@ -622,9 +627,10 @@ const LVK=['dfF','dfR','ts','rsa'];
 const leverLevel=(b,k,fl)=>Math.max(b*k,Math.min(b,fl));
 const leverFloor=a=>a==='dfF'?CAL.leverMinF:CAL.leverMinR;
 function biasOf(c,L,g,r){
+ /* LB: scarto dal neutro sulla barra sotto/sovrasterzo (centro 50); prima mancava il 50 e il valore saturava a 0 su FF e 4WD */
  const LB={FF:-25,FR:5,MR:10,RR:20,'4WD':-5}, LT={FF:38,FR:50,MR:58,RR:62,'4WD':68};
  const T=TERRAINS[c.terrain];
- return {os:LB[L]+r*30, turn:50+r*15, stab:58-r*20, trac:LT[L]+T.grip/3, brk:55, grip:20+g*7+T.grip};
+ return {os:50+LB[L]+r*30, turn:50+r*15, stab:58-r*20, trac:LT[L]+T.grip/3, brk:55, grip:20+g*7+T.grip};
 }
 function effects(c,S,B,R,INV,bias){
  const e={os:0,turn:0,stab:0,trac:0,brk:0,grip:0},G=.8,sgA=LSDA_SIGN[layoutOf(c)]||1;
@@ -752,7 +758,7 @@ const EN={
 /* interfaccia statica */
 'Gomme anteriori':'Front tyres','Gomme posteriori':'Rear tyres','Parti installate':'Installed parts',
 'Il tuner regola solo ciò che la tua auto può regolare. Togli la spunta alle parti che non hai montato.':'The tuner only adjusts what your car can adjust. Untick the parts you have not fitted.',
-'Completamente regolabili':'Fully customizable','Solo altezza regolabile':'Height adjustable only','Non regolabili':'Not adjustable',
+'Completamente regolabili':'Fully customizable','Tipo di auto':'Car type','Sportiva o stradale preparata':'Sports or road car, upgraded','Già preparata da corsa (GT3, GT500, Gr.1…)':'Already race-prepared (GT3, GT500, Gr.1…)','Solo altezza regolabile':'Height adjustable only','Non regolabili':'Not adjustable',
 'Differenziale completamente regolabile':'Fully customizable differential','Differenziale centrale a vettorizzazione (solo integrale)':'Torque-vectoring center differential (AWD only)',
 'Aerodinamica regolabile':'Adjustable aerodynamics','Carico aero: quota del suggerito':'Downforce: share of suggested','Controller del bilanciamento freni':'Brake balance controller','Cambio completamente regolabile':'Fully customizable transmission','Sterzo integrale 4WS':'4WS four-wheel steering',
 'ECU completamente regolabile':'Fully customizable ECU','Limitatore di potenza':'Power restrictor','Zavorra':'Ballast',
@@ -998,7 +1004,7 @@ const FIXES=[
  ['Instabile su dossi e cordoli',{freqF:-.02,freqR:-.02,extF:-.07,extR:-.07,rhF:.08,rhR:.08},'Fondo e sospensioni'],
  ['Troppo rigida sui cordoli',{compF:-.08,compR:-.08,extF:-.06,extR:-.06,freqF:-.03,freqR:-.03},'Fondo e sospensioni'],
  ['Tocca il fondo',{rhF:.1,rhR:.1,freqF:.03,freqR:.03},'Fondo e sospensioni']];
-const FORM=['stabL','stabH','rotL','rotM','rotH','carName','engine','drive','uW','uP','uT','weight','wf','power','torque','asp','cg','pp','ppNow','tyre','tyreR','susp','nGears'];
+const FORM=['stabL','stabH','rotL','rotM','rotH','carName','engine','drive','uW','uP','uT','weight','wf','power','torque','asp','cg','pp','ppNow','tyre','tyreR','susp','cat','nGears'];
 const KEY='setup-lab-v3';
 let st={terrain:'asfalto',style:'neutro',circuit:'spa',prof:{...CIRCUITS.spa.p}};
 let R=defRanges(),INV={toe:true,bb:true},S={},B={},meta={r:0,L:'FR',g:4},car=null,carE=null;
@@ -1021,7 +1027,7 @@ const aeroCtx=()=>({Rg:R,base:{dfF:lv.dfF!=null?lv.dfF:lvAuto.dfF,dfR:lv.dfR!=nu
 function readCar(){
  return {name:$('#carName').value.trim()||tr('Senza nome','Unnamed'),engine:$('#engine').value,drive:$('#drive').value,
   weight:num('weight',1100,300,4000,unitF('uW')),wf:parseWf($('#wf').value),stabL:stabClass($('#stabL').value),stabH:stabClass($('#stabH').value),rotL:+$('#rotL').value||0,rotM:+$('#rotM').value||0,rotH:+$('#rotH').value||0,power:num('power',250,20,3000,unitF('uP')),torque:num('torque',300,20,4000,unitF('uT')),
-  asp:$('#asp').value,cg:$('#cg').value,pp:num('pp',600,100,1500),ppNow:num('ppNow',650,100,1500),gears:Math.round(num('nGears',6,4,10)),tyre:$('#tyre').value,tyreR:$('#tyreR').value||$('#tyre').value,aero:$('#aero').checked,
+  asp:$('#asp').value,cg:$('#cg').value,cat:$('#cat').value,pp:num('pp',600,100,1500),ppNow:num('ppNow',650,100,1500),gears:Math.round(num('nGears',6,4,10)),tyre:$('#tyre').value,tyreR:$('#tyreR').value||$('#tyre').value,aero:$('#aero').checked,
   inst:{susp:$('#susp').value,lsd:$('#cLsd').checked,tv:$('#cTv').checked,aero:$('#aero').checked,brk:$('#cBrk').checked,trans:$('#cTrans').checked,ws:$('#c4ws').checked},
   comp:{ecu:$('#cEcu').checked,rst:$('#cRst').checked,bal:$('#cBal').checked,aero:$('#aero').checked},
   terrain:st.terrain,style:st.style,prof:{...st.prof},ae:aeroCtx()};
@@ -1032,7 +1038,7 @@ function toast(m,ms){const t=$('#toast');t.textContent=m;t.hidden=false;clearTim
 function snap(){const f={};FORM.forEach(i=>f[i]=$('#'+i).value);CHK.forEach(i=>f[i]=$('#'+i).checked);
  return {f,st,R,INV,invv:2,S,B,meta,plan,lam,hist,opt,lv,lvAuto,cur,A,prevSet,measAt,aeroPP:ppAeroIn}}
 function apply(d){
- ['stabL','stabH','rotL','rotM','rotH'].forEach(i=>{if(!(i in d.f))$('#'+i).value=''});if(d.f&&!('cg' in d.f))$('#cg').value='auto';
+ ['stabL','stabH','rotL','rotM','rotH'].forEach(i=>{if(!(i in d.f))$('#'+i).value=''});if(d.f&&!('cg' in d.f))$('#cg').value='auto';if(d.f&&!('cat' in d.f))$('#cat').value='road';
  Object.entries(d.f).forEach(([i,v])=>{if(CHK.includes(i))$('#'+i).checked=v;else if($('#'+i))$('#'+i).value=v});
  st=d.st;R={...defRanges(),...d.R};INV={...INV,...(d.INV||{})};if(d.invv!==2)INV.bb=true; /* migrazione: il vecchio default (positivo = anteriore) non corrispondeva a GT7 */ plan={...plDefault(),...(d.plan||{})};lam=d.lam||1;hist=d.hist||[];opt={...opt,...(d.opt||{})};
  ppAeroIn={fLo:null,fHi:null,rLo:null,rHi:null,...(d.aeroPP||{})};setAeroPP();lv={dfF:null,dfR:null,ts:null,rsa:null,...(d.lv||{})};lvAuto=d.lvAuto||{};cur=d.cur||{};S=d.S||{};B=d.B||{};meta=d.meta||meta;A=d.A||null;prevSet=d.prevSet||null;measAt=d.measAt||'';
@@ -1175,6 +1181,12 @@ function applyFix(i){
  toast(tr('Applicato: ','Applied: ')+T(n));
 }
 /* quando cambia un limite, i valori già presenti mantengono la posizione relativa nel nuovo range */
+let catPrev='road';
+/* cambiando tipo di auto i range delle frequenze passano al default della categoria, ma solo se l'utente non li aveva modificati (uguali al default di riferimento o della categoria precedente) */
+function applyCatRanges(prev,next){
+ const same=(u,r)=>u&&r&&Math.abs(u.min-r[0])<1e-9&&Math.abs(u.max-r[1])<1e-9;
+ for(const k of ['freqF','freqR']){const u=R[k];if(same(u,PK[k].r)||same(u,CAT_HZ[prev]))applyRange(k,{...u,min:CAT_HZ[next][0],max:CAT_HZ[next][1]})}
+}
 function applyRange(k,n){
  const old=R[k],mv=v=>{if(v==null)return v;if(ABS.has(k))return +clamp(Math.round(v/n.step)*n.step,n.min,n.max).toFixed(decs(n.step));const t=(v-old.min)/((old.max-old.min)||1);return +clamp(Math.round((n.min+t*(n.max-n.min))/n.step)*n.step,n.min,n.max).toFixed(decs(n.step))};
  if(S[k]!=null)S[k]=mv(S[k]);if(B[k]!=null)B[k]=mv(B[k]);if(A&&A[k]!=null)A[k]=mv(A[k]);
@@ -1349,7 +1361,8 @@ try{if(!localStorage.getItem('gt7-onb'))$('#onb').hidden=false}catch(e){$('#onb'
 /* cambiando le parti installate si aggiornano subito limiti e livelli (prima serviva rigenerare) */
 document.addEventListener('change',e=>{
  const id=e.target.id;
- if(CHK.includes(id)||id==='susp'||id==='nGears'){refreshCar();buildRanges();buildLevels();if(typeof ppChoices==='function')renderPP()}
+ if(id==='cat'){applyCatRanges(catPrev,e.target.value);catPrev=e.target.value}
+ if(CHK.includes(id)||id==='susp'||id==='nGears'||id==='cat'){refreshCar();buildRanges();buildLevels();if(typeof ppChoices==='function')renderPP()}
 });
 
 function syncWf(){const a=parseWf($('#wf').value);$('#wfA').value=+a.toFixed(1);$('#wfP').value=+(100-a).toFixed(1)}
