@@ -124,7 +124,8 @@ input[type=text],input[type=number],select{background:var(--panel2);border:1px s
 .toeviz{margin-top:10px;text-align:center}.toeviz svg{width:100%;max-width:300px;height:auto;display:block;margin:0 auto}
 .toeviz .tv-car{fill:none;stroke:var(--line);stroke-width:2}.toeviz .tv-whl{fill:var(--accent);stroke:var(--fg);stroke-width:1}
 .toeviz .tv-axis{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}.toeviz text{fill:var(--muted);font:11px var(--body)}
-.toeviz .tv-lab{font-size:12px;fill:var(--fg)}
+.toeviz .tv-cap{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:13px;color:var(--muted)}.toeviz .tv-cap b{color:var(--fg);font-weight:600}
+.cgviz{margin-top:4px;text-align:center}.cgviz svg{width:100%;max-width:300px;height:auto;display:block;margin:0 auto}.cgviz .cv-body{fill:none;stroke:var(--line);stroke-width:2}.cgviz .cv-whl{fill:none;stroke:var(--line);stroke-width:2}.cgviz .cv-gnd{stroke:var(--line);stroke-width:1}.cgviz .cv-ax{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}.cgviz .cv-dot{fill:var(--accent);stroke:var(--fg);stroke-width:1.5}.cgviz text{fill:var(--muted);font:11px var(--body)}.cgviz .cv-cap{font-size:13px;color:var(--muted);margin-top:2px}
 .item{padding:12px 0;border-top:1px solid var(--line)}
 .item:first-of-type{border-top:0}
 .ihead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
@@ -271,6 +272,7 @@ div.f>span:first-child{display:block}
       <label class="f full">Coppia<span class="u"><input type="number" id="torque" value="300" min="30" max="4000" inputmode="decimal"><select id="uT" aria-label="Unità coppia"><option value="nm">Nm</option><option value="kgf">kgfm</option><option value="lbf">lb-ft</option></select></span></label>
       <label class="f">Motore<select id="asp"><option value="NA">Aspirato</option><option value="turbo">Turbo / compressore</option><option value="ev">Elettrico</option></select></label>
       <label class="f">Baricentro<select id="cg"><option value="auto" selected>Auto (stimato)</option><option value="low">Basso</option><option value="mid">Medio</option><option value="high">Alto (SUV)</option></select></label>
+      <div class="cgviz full" id="cgviz"></div>
       <details class="f full" id="bannerBox"><summary>Dati aggiuntivi (opzionali, affinano il setup)</summary>
         <p class="hint">Se li conosci inseriscili, altrimenti lascia i campi vuoti.</p>
         <div class="grid">
@@ -736,7 +738,7 @@ function solvePlan(c,pl,lam,opt,Rg){
 }
 
 /* ===== LINGUA (IT / EN) ===== */
-const APP_VERSION='0.1.1';
+const APP_VERSION='0.1.2';
 let lang='it';
 try{const s=localStorage.getItem('gt7-lang');lang=s==='en'||s==='it'?s:((navigator.language||'it').toLowerCase().startsWith('it')?'it':'en')}catch(e){}
 const EN={
@@ -1042,7 +1044,7 @@ function apply(d){
  Object.entries(d.f).forEach(([i,v])=>{if(CHK.includes(i))$('#'+i).checked=v;else if($('#'+i))$('#'+i).value=v});
  st=d.st;R={...defRanges(),...d.R};INV={...INV,...(d.INV||{})};if(d.invv!==2)INV.bb=true; /* migrazione: il vecchio default (positivo = anteriore) non corrispondeva a GT7 */ plan={...plDefault(),...(d.plan||{})};lam=d.lam||1;hist=d.hist||[];opt={...opt,...(d.opt||{})};
  ppAeroIn={fLo:null,fHi:null,rLo:null,rHi:null,...(d.aeroPP||{})};setAeroPP();lv={dfF:null,dfR:null,ts:null,rsa:null,...(d.lv||{})};lvAuto=d.lvAuto||{};cur=d.cur||{};S=d.S||{};B=d.B||{};meta=d.meta||meta;A=d.A||null;prevSet=d.prevSet||null;measAt=d.measAt||'';
- ['uW','uP','uT'].forEach(i=>{const e=$('#'+i);if(e)e.dataset.prev=e.value});if(typeof syncLayout==='function'){syncLayout();syncWf();stabLab()}
+ ['uW','uP','uT'].forEach(i=>{const e=$('#'+i);if(e)e.dataset.prev=e.value});if(typeof syncLayout==='function'){syncLayout();syncWf();paintCg();stabLab()}
 }
 function save(){try{localStorage.setItem(KEY,JSON.stringify(snap()))}catch(e){}}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY)||'null');if(!d)return false;apply(d);return Object.keys(S).length>0}catch(e){return false}}
@@ -1107,13 +1109,29 @@ function toeSvg(){
  const lab=k=>{const v=inward(k);return Math.abs(v)<1e-9?tr('parallele','parallel'):v>0?tr('toe-in (verso l\'interno)','toe-in (inward)'):tr('toe-out (verso l\'esterno)','toe-out (outward)')};
  const fa=ang('toeF'),ra=ang('toeR'),L=70,Rr=170;
  return `<svg viewBox="0 0 240 170" role="img" aria-label="${tr('Direzione delle ruote viste dall\'alto','Wheel direction seen from above')}">
-  <rect class="tv-car" x="${L+14}" y="30" width="${Rr-L-28}" height="110" rx="26"/><line class="tv-axis" x1="120" y1="8" x2="120" y2="162"/>
+  <rect class="tv-car" x="${L+14}" y="30" width="${Rr-L-28}" height="110" rx="26"/><line class="tv-axis" x1="120" y1="20" x2="120" y2="152"/>
   ${wh(L,42,fa)}${wh(Rr,42,-fa)}${wh(L,128,ra)}${wh(Rr,128,-ra)}
   <text x="120" y="12" text-anchor="middle">${tr('ANTERIORE','FRONT')} ▲</text>
-  <text class="tv-lab" x="120" y="82" text-anchor="middle">${tr('Ant.','Front')}: ${lab('toeF')}</text>
-  <text class="tv-lab" x="120" y="98" text-anchor="middle">${tr('Post.','Rear')}: ${lab('toeR')}</text>
-  <text x="120" y="166" text-anchor="middle">${tr('angolo esagerato per leggibilità','angle exaggerated for readability')}</text></svg>`;
+  <text x="120" y="166" text-anchor="middle">${tr('angolo esagerato per leggibilità','angle exaggerated for readability')}</text></svg>
+  <div class="tv-cap"><span>${tr('Ant.','Front')}: <b>${lab('toeF')}</b></span><span>${tr('Post.','Rear')}: <b>${lab('toeR')}</b></span></div>`;
 }
+/* vista laterale stilizzata (davanti a sinistra): il punto e' il baricentro, longitudinale dalla ripartizione del peso, in altezza da basso/medio/alto o dalla stima automatica */
+function cgSvg(){
+ const c=readCar(),wf=clamp(c.wf,30,70)/100,lv=c.cg==='auto'||c.cg==null?cgEst(c):{low:-1,mid:0,high:1}[c.cg];
+ const xF=58,xR=182,x=xF+(1-wf)*(xR-xF),y=54-12*lv;
+ const word=lv<-.33?tr('basso','low'):lv>.33?tr('alto','high'):tr('medio','medium');
+ return `<svg viewBox="0 0 240 100" role="img" aria-label="${tr('Posizione stimata del baricentro','Estimated centre of gravity position')}">
+  <path class="cv-body" d="M18 72 L18 60 Q20 54 40 52 L78 48 Q98 30 124 29 L152 29 Q174 32 186 48 L212 54 Q224 58 224 68 L224 72 Z"/>
+  <circle class="cv-whl" cx="${xF}" cy="73" r="14"/><circle class="cv-whl" cx="${xR}" cy="73" r="14"/><line class="cv-gnd" x1="6" y1="88" x2="234" y2="88"/>
+  <line class="cv-ax" x1="${xF}" y1="22" x2="${xF}" y2="88"/><line class="cv-ax" x1="${xR}" y1="22" x2="${xR}" y2="88"/>
+  <circle class="cv-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6"/>
+  <text x="${xF}" y="16" text-anchor="middle">${tr('ANT','FRONT')}</text><text x="${xR}" y="16" text-anchor="middle">${tr('POST','REAR')}</text></svg>
+  <div class="cv-cap">${tr('Baricentro','Centre of gravity')}: ${word}${c.cg==='auto'||c.cg==null?tr(' (stimato)',' (estimated)'):''} · ${tr('peso anteriore','front weight')} ${Math.round(wf*100)}%</div>`;
+}
+function paintCg(){const e=document.getElementById('cgviz');if(e)e.innerHTML=cgSvg()}
+document.addEventListener('input',e=>{if(['weight','wfA','wfP','wf','power','cg','asp'].includes(e.target.id))paintCg()});
+document.addEventListener('change',e=>{if(['weight','wfA','wfP','wf','cg','asp','engine','drive','uW'].includes(e.target.id)||(e.target.dataset&&e.target.dataset.eng!==undefined))paintCg()});
+document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('[data-wfs],[data-lay],[data-eng],.lay'))setTimeout(paintCg,0)});
 function paintToe(){const e=document.querySelector('[data-toeviz]');if(e&&S.toeF!=null&&S.toeR!=null)e.innerHTML=toeSvg()}
 function gearGroup(){
  if(!car||!has(car,'trans'))return '';
@@ -1378,7 +1396,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-wfs]');if(
 function stabLab(){[['stabL','stabLc'],['stabH','stabHc']].forEach(([i,l])=>{const c=stabClass($('#'+i).value);$('#'+l).textContent=c?'→ '+tr({us:'Sottosterzo',mid:'Neutra',os:'Sovrasterzo'}[c],{us:'Understeer',mid:'Neutral',os:'Oversteer'}[c]):''})}
 function refreshAll(){
  refreshCar();$('#hdrCar').textContent=car.name;
- buildChoices();buildRanges();buildGroups();buildLevels();paintFx();paintTips();ppChoices();renderPP();warnTyre();syncWf();stabLab();measStat();
+ buildChoices();buildRanges();buildGroups();buildLevels();paintFx();paintTips();ppChoices();renderPP();warnTyre();syncWf();paintCg();stabLab();measStat();
 }
 function fileName(){return (($('#carName').value.trim()||'setup').replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'setup')+'.setuplab.json'}
 document.addEventListener('click',e=>{
@@ -1547,6 +1565,7 @@ document.addEventListener('click',e=>{
 });
 applyLang();
 $('#verTxt').textContent='Setup Lab v'+APP_VERSION;
+paintCg();
 
 </script>
 

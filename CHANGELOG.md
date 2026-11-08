@@ -2,6 +2,10 @@
 
 All notable changes are listed here. The project follows semantic versioning; `0.x` means the first, still evolving releases.
 
+## 0.1.2 - readability
+- Centre of gravity: stylised side view of the car with a dot showing the estimated position (longitudinal from the weight distribution, height from low/medium/high or the automatic estimate).
+- Toe diagram: labels moved out of the drawing to a caption below it; the dashed axis no longer crosses the text.
+
 ## 0.1.1 - update fix
 - The service worker now fetches from the network first and uses the cache only offline; an installed copy no longer stays stuck on the first downloaded version. The page reloads once when a new service worker takes over.
 
