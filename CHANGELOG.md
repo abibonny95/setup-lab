@@ -2,6 +2,16 @@
 
 All notable changes are listed here. The project follows semantic versioning; `0.x` means the first, still evolving releases.
 
+## 0.1.0 - model audit
+- Suspension: matched front/rear natural frequency (game manual); rear/front ratio configurable; brake balance starts at 0 and is used as a quick-fix lever; brake direction texts follow the manual.
+- Toe diagram (top view) and quick fixes now move the same physical amount whatever range is set.
+- Downforce counts in PP: separate front and rear coefficients from four cross readings, front/rear ratio penalty (validated on Lamborghini Huracan GT3 and Ferrari 430), optional PP lever with floors (front 25%, rear 50%) and a rear floor in the generator.
+- Ride height follows the game text (front lower: oversteer, rear lower: understeer, small effect); no stability term.
+- Physical parameters (Hz, camber, toe, differential levels, damping, anti-roll bars, brake balance) are computed in game units and clamped to the user's range; ride height, downforce levels and gears stay positional.
+- New "Car type" selector (road-prepared / already race): default Hz range 1.75-3.75 or 3-5 and a higher base frequency for race cars (hypothesis, to be calibrated on track).
+- Fixed the under/oversteer bar offset (FF and 4WD were stuck at the bottom).
+- Test tools in `tools/`: safety net (3528 configurations), quick-fix audit, aero PP check, range mapping check.
+
 ## 0.0.0 - first release
 - Setup generator from weight, weight distribution, engine position, drivetrain, aspiration, center of gravity, front/rear tyres, PP, surface (tarmac, dirt, snow), circuit profile and driving style.
 - Installed-parts awareness: only the settings the car can adjust are shown (suspension, LSD, center differential, aero, brake controller, transmission, 4WS, ECU, restrictor, ballast).
