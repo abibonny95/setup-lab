@@ -1427,7 +1427,7 @@ function paintAero(){
  const on=!!car&&has(car,'aero');$('#aeroCard').hidden=!on;$('#aeroOpt').hidden=!on;if(!on)return;
  const m=aeroLevels(car,plan),pc=x=>Math.round(x*100)+'%',el=$('#aeroSum');
  if(!m){el.textContent=tr('Genera il setup per conoscere i livelli di deportanza suggeriti.','Generate the setup to get the suggested downforce levels.');return}
- const ax=(k,a,nm)=>m[a]?`${nm}: ${tr('attuale','current')} ${cur[k]!=null?pc(m[a].C):tr('non indicato (si assume il suggerito)','not entered (the suggested one is assumed)')} → setup ${pc(m[a].B*m.k)}`:'';
+ const ax=(k,a,nm)=>m[a]?`${nm}: ${tr('attuale','current')} ${cur[k]!=null?pc(m[a].C):tr('non indicato (si assume il suggerito)','not entered (the suggested one is assumed)')} → setup ${pc(m[a].E)}`:'';
  const lvTxt=tr('Livelli di deportanza nel range','Downforce levels in the range')+' — '+[ax('dfF','F',tr('anteriore','front')),ax('dfR','R',tr('posteriore','rear'))].filter(Boolean).join('; ')+'.';
  const sg=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1);let t;
  if(!CAL.ppAeroF&&!CAL.ppAeroR)t=tr('Coefficienti aero non ancora inseriti: senza le quattro letture l\'aero non entra nei PP stimati.','Downforce coefficients not entered yet: without the four readings downforce does not enter the PP estimate.');
