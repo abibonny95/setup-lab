@@ -736,7 +736,7 @@ function solvePlan(c,pl,lam,opt,Rg){
 }
 
 /* ===== LINGUA (IT / EN) ===== */
-const APP_VERSION='0.1.0';
+const APP_VERSION='0.1.1';
 let lang='it';
 try{const s=localStorage.getItem('gt7-lang');lang=s==='en'||s==='it'?s:((navigator.language||'it').toLowerCase().startsWith('it')?'it':'en')}catch(e){}
 const EN={
@@ -1550,5 +1550,9 @@ $('#verTxt').textContent='Setup Lab v'+APP_VERSION;
 
 </script>
 
-<script>if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js?v='+APP_VERSION).catch(function(){});</script>
+<script>if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
+ /* se un service worker diverso prende il controllo di una pagina gia' controllata (aggiornamento), ricarica una volta per mostrare subito la versione nuova; lo stato e' salvato in locale */
+ const had=!!navigator.serviceWorker.controller;let rl=false;
+ navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!rl){rl=true;location.reload()}});
+ navigator.serviceWorker.register('sw.js?v='+APP_VERSION).catch(function(){});}</script>
 </body></html>

@@ -2,6 +2,9 @@
 
 All notable changes are listed here. The project follows semantic versioning; `0.x` means the first, still evolving releases.
 
+## 0.1.1 - update fix
+- The service worker now fetches from the network first and uses the cache only offline; an installed copy no longer stays stuck on the first downloaded version. The page reloads once when a new service worker takes over.
+
 ## 0.1.0 - model audit
 - Suspension: matched front/rear natural frequency (game manual); rear/front ratio configurable; brake balance starts at 0 and is used as a quick-fix lever; brake direction texts follow the manual.
 - Toe diagram (top view) and quick fixes now move the same physical amount whatever range is set.
