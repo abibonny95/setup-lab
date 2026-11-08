@@ -34,6 +34,7 @@ const CAL_MINF = .25;
 
 /* 1) valori noti: livelli base .5/.5, attuali 20/60 su range 0-100 -> livelli attuali .2/.6; anteriore +20, posteriore -30 su tutto il range */
 console.log('1) contributo aero con valori calcolati a mano');
+const K_PEN = E.CAL.aeroBalK; E.CAL.aeroBalK = 0;   /* sezione 1: contributi lineari puri, senza penalita' di equilibrio (con range 0-100 il rapporto sarebbe 1.0) */
 setK(0, 0);
 near(E.dAero(mkCar(), plan0()), 0, 1e-12, 'coefficienti 0 -> contributo 0');
 setK(20, -30);
@@ -56,21 +57,22 @@ near(E.dAero(mkCar({ ae: { ...mkCar().ae, cur: { dfF: -50, dfR: 900 } } }), plan
 near(E.aeroSlope(E.aeroLevels(mkCar(), plan0())), 20 * .5, 1e-9, 'pendenza rispetto alla quota: solo l\'anteriore (il posteriore a .5 e\' gia\' al limite) 20*0.5');
 near(E.aeroSlope(E.aeroLevels(mkCar({ ae: { ...mkCar().ae, base: { dfF: .8, dfR: .8 } } }), plan0())), 20 * .8 + -30 * .8, 1e-9, 'pendenza con entrambi gli assi sopra i limiti: 20*0.8 + -30*0.8');
 
-/* 1a) penalita' di equilibrio calcolata a mano: livelli attuali al centro (differenza 0, nessuna penalita'), setup con anteriore al massimo e posteriore al minimo
-   (differenza di livello 1.0): 63 * (1.0 - 0.76) = 15.12 PP in meno */
+E.CAL.aeroBalK = K_PEN;
+/* 1a) penalita' di equilibrio calcolata a mano (rapporto F/R sui valori assoluti, soglia .82, K 190): livelli attuali al centro (differenza 0, nessuna penalita'), setup con anteriore al massimo e posteriore al minimo
+   (450/500 = 0.9): 190 * (0.9 - 0.82) = 15.2 PP in meno; livelli attuali 400/600 = 0.667, nessuna penalita' */
 console.log("1a) penalita' di equilibrio con valori a mano");
 { setK(22, -30);
   const rg = { ...Rg, dfF: { min: 350, max: 450, step: 1 }, dfR: { min: 500, max: 700, step: 1 } };
   const c = mkCar({ ae: { Rg: rg, base: { dfF: 1, dfR: 0 }, cur: { dfF: 400, dfR: 600 } } }), a = E.dAeroAxes(c, plan0());
   near(a.F, 22 * .5, 1e-9, 'lineare anteriore 22*(1-0.5)'); near(a.R, -30 * (0 - .5), 1e-9, 'lineare posteriore -30*(0-0.5)');
-  near(a.diff, 1, 1e-9, 'differenza di livello del setup'); near(a.pen, 15.12, 1e-9, 'penalita 63*(1-0.76)'); near(a.bal, -15.12, 1e-9, 'contributo equilibrio = -penalita (attuale senza penalita)');
-  near(E.dAero(c, plan0()), 11 + 15 - 15.12, 1e-9, 'totale 11 + 15 - 15.12');
+  near(a.ratio, .9, 1e-9, 'rapporto del setup 450/500'); near(a.pen, 15.2, 1e-9, 'penalita 190*(0.9-0.82)'); near(a.bal, -15.2, 1e-9, 'contributo equilibrio = -penalita (attuale senza penalita)');
+  near(E.dAero(c, plan0()), 11 + 15 - 15.2, 1e-9, 'totale 11 + 15 - 15.2');
   /* se i PP attuali erano gia' stati letti con la penalita', il piano non la paga due volte */
   const c2 = mkCar({ ae: { Rg: rg, base: { dfF: 1, dfR: 0 }, cur: { dfF: 450, dfR: 500 } } });
   near(E.dAeroAxes(c2, plan0()).bal, 0, 1e-9, 'attuale = setup: equilibrio 0');
   /* sotto soglia: nessuna penalita' */
   const c3 = mkCar({ ae: { Rg: rg, base: { dfF: .5, dfR: .5 }, cur: { dfF: 400, dfR: 600 } } });
-  near(E.dAeroAxes(c3, plan0()).pen, 0, 1e-12, 'differenza 0: nessuna penalita');
+  near(E.dAeroAxes(c3, plan0()).pen, 0, 1e-12, 'rapporto 0.667: nessuna penalita');
   /* solo un asse noto: nessuna penalita' */
   near(E.dAeroAxes(mkCar({ ae: { Rg: rg, base: { dfF: 1 }, cur: { dfF: 400, dfR: 600 } } }), plan0()).bal, 0, 1e-12, 'asse posteriore ignoto: nessuna penalita');
   setK(0, 0); near(E.dAeroAxes(c, plan0()).bal, 0, 1e-12, 'coefficienti 0: aero fuori dai PP, penalita compresa'); }
@@ -100,6 +102,23 @@ console.log("1b) Huracan GT3: modello contro le 22 misure");
   setK(kF, kR);
   for (const [f, r] of [[350, 600], [450, 600], [400, 500], [400, 700]]) near(E.dAeroAxes(mkCar({ ae: { Rg: rg, base: { dfF: (f - 350) / 100, dfR: (r - 500) / 200 }, cur: { dfF: 400, dfR: 600 } } }), plan0()).pen, 0, 1e-12, `croce ${f}/${r}: nessuna penalita'`); }
 
+/* 1c) Ferrari 430 Scuderia '07, anteriore 120-220, posteriore 280-430, centro 715.07: 24 punti. Risposta lineare pura (nessuna penalita' misurata, anche con anteriore massimo e
+   posteriore minimo = 736.07): la penalita' sul rapporto (soglia .82) non deve toccarla (220/280 = 0.786). Coefficienti 24.49 / -18.16 dall'adattamento sui punti. */
+console.log("1c) Ferrari 430: modello contro le misure, penalita' condivisa con la Huracan");
+{ const meas = {}; const rr = [280, 300, 320, 340, 355, 370, 390, 410, 430], pr = [712.98, 709.54, 706.40, 703.67, 703.19, 701.24, 698.59, 695.77, 693.23];
+  rr.forEach((r, i) => { meas['120/' + r] = pr[i] });
+  [120, 140, 160, 170, 180, 200, 220].forEach((f, i) => { meas[f + '/430'] = [693.23, 698.32, 704.06, 706.73, 709.05, 713.68, 717.37][i] });
+  meas['170/355'] = 715.07; meas['220/280'] = 736.07;
+  const rg = { ...Rg, dfF: { min: 120, max: 220, step: 1 }, dfR: { min: 280, max: 430, step: 1 } };
+  setK(24.49, -18.16);
+  let se = 0, worst = 0, wk = '', n = 0;
+  for (const key in meas) { const [f, r] = key.split('/').map(Number);
+    const c = mkCar({ ppNow: 715.07, pp: 715.07, ae: { Rg: rg, base: { dfF: (f - 120) / 100, dfR: (r - 280) / 150 }, cur: { dfF: 170, dfR: 355 } } });
+    const e = E.ppPred(c, plan0(), 1) - meas[key]; se += e * e; n++; if (Math.abs(e) > worst) { worst = Math.abs(e); wk = key }
+    ok(E.dAeroAxes(c, plan0()).pen === 0, `Ferrari ${key}: nessuna penalita' (rapporto ${(f / r).toFixed(2)})`) }
+  const rms = Math.sqrt(se / n); console.log(`   ${n} punti: errore quadratico medio ${rms.toFixed(2)}, massimo ${worst.toFixed(2)} (${wk})`);
+  ok(rms <= 1.0, `Ferrari: errore quadratico medio <= 1.0 (${rms.toFixed(2)})`); ok(worst <= 2.5, `Ferrari: errore massimo <= 2.5 (${worst.toFixed(2)} a ${wk})`); }
+
 /* 2) ciclo di calibrazione: lam vero 1.3, PP letti con aero applicato */
 console.log('2) calibrazione lam con aero');
 setK(20, -30);
@@ -110,6 +129,7 @@ setK(20, -30);
 
 /* 3) piano con aero come leva: disponibile solo se ridurre la deportanza di entrambi gli assi abbassa i PP */
 console.log('3) solvePlan con aero come leva');
+E.CAL.aeroBalK = 0;   /* sezione 3: leva lineare, caso di prova con range 0-100 (rapporto 1.0) che altrimenti attiverebbe la penalita' */
 const SP = mode => ({ share: .6, method: 'ecu', pos: 'auto', aero: mode });
 { setK(30, -10);   /* pendenza +10: scalare giu' abbassa i PP */
   const c = mkCar(), pl = plan0();
@@ -142,6 +162,7 @@ const SP = mode => ({ share: .6, method: 'ecu', pos: 'auto', aero: mode });
   ok(up.plan.dfk === 100 && up.plan.ecu === 100 && up.plan.bal === 0, 'target sopra i PP attuali: piano neutro'); }
 
 /* 3b) la quota dfk scala davvero la deportanza generata (range di riferimento 0-100, livelli base del generatore) */
+E.CAL.aeroBalK = K_PEN;
 console.log('3b) gen con quota dfk');
 { const c = mkCar(), inv = { toe: true, bb: true }, lvN = { dfF: null, dfR: null, ts: null, rsa: null };
   const g100 = E.gen(E.effCar(c, plan0()), Rg, inv, lvN), g50 = E.gen(E.effCar(c, { ...plan0(), dfk: 50 }), Rg, inv, lvN);

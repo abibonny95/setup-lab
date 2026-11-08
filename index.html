@@ -543,12 +543,12 @@ const TF=[1.1,1.2,1.3,1.5,1.6,1.8,3,3.5,4]; /* Hz per classe di gomma: strada 1.
    (metodo a croce attorno al centro). Con segno. 0 = non misurato: quell'asse non entra nei PP. Il modello e' lineare nella posizione dentro il range: sulla griglia 3x3 della
    Huracan 8 punti su 9 restano entro 2 PP (il nono, anteriore 450 / posteriore 500, scarta di ~15 PP e va rimisurato).
    aeroShare: quota della riduzione PP richiesta affidata all'aero quando l'utente lo usa come leva (ipotesi, non misurata).
-   aeroBalThr / aeroBalK: penalita' di equilibrio. Con l'anteriore molto piu' carico del posteriore il gioco toglie PP oltre il modello lineare: Huracan GT3, anteriore 450 e
-   posteriore da 500 a 560 (22 punti misurati: errore quadratico medio 4.0 solo lineare, 1.0 con la penalita'). Modello: PP -= aeroBalK * max(0, livello anteriore - livello posteriore - aeroBalThr),
-   con i livelli come posizione nel range di ciascun asse (indipendente dalle unita' dei range, che l'utente puo' non aver ancora inserito). Soglia 0.76 e pendenza 63 PP per unita' di differenza
-   vengono da UNA sola auto e da una sola fetta della griglia; sulla Huracan una soglia sul rapporto anteriore/posteriore in valori assoluti (0.82) descrive i dati ugualmente bene:
-   le due forme si distinguono con una lettura anteriore massimo / posteriore minimo su un'altra auto. */
-const CAL={freqRear:1,arbPerLltd:20,bbWf:0,bbCg:0,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.76,aeroBalK:63,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
+   aeroBalThr / aeroBalK: penalita' di equilibrio sul RAPPORTO dei valori assoluti anteriore/posteriore (come nel gioco, non sul livello nel range). Con l'anteriore molto piu' carico del
+   posteriore il gioco toglie PP oltre il modello lineare: PP -= aeroBalK * max(0, F/R - aeroBalThr). Misure: Huracan GT3 (22 punti; errore quadratico medio 4.0 solo lineare) e
+   Ferrari 430 Scuderia (24 punti, lineare puro: 0.56, anche con anteriore al massimo e posteriore al minimo, rapporto 0.79 < soglia). Adattamento congiunto: soglia 0.82, K 190,
+   errore 0.71 (massimo 2.2) sulle due auto; la stessa penalita' sul livello relativo nel range darebbe 1.4 e sbaglia la Ferrari. Resta il limite di due sole auto: il rapporto dipende
+   dai valori assoluti dei range inseriti (senza range l'aero non entra nei PP). */
+const CAL={freqRear:1,arbPerLltd:20,bbWf:0,bbCg:0,ppAeroF:0,ppAeroR:0,aeroShare:.35,aeroBalThr:.82,aeroBalK:190,aeroRearMin:.5,leverMinF:.25,leverMinR:.5};
 function gen(c,R,INV,lv){
  const tyF=TYRES.find(t=>t.id===c.tyre)||TYRES[4],tyR=TYRES.find(t=>t.id===(c.tyreR||c.tyre))||tyF;
  const gF=tyF.g,gR=tyR.g,g=(gF+gR)/2,L=layoutOf(c),T=TERRAINS[c.terrain],p=c.prof,st=STYLES[c.style];
@@ -667,14 +667,16 @@ function aeroLevels(c,pl){
  }
  return out.F||out.R?out:null;
 }
-/* penalita' di equilibrio per una coppia di livelli (0..1, posizione nel range di ciascun asse) */
-const aeroBalPen=(lf,lr)=>CAL.aeroBalK*Math.max(0,lf-lr-CAL.aeroBalThr);
-/* contributi: F e R lineari per asse, bal = penalita' prevista meno quella gia' presente alla lettura dei PP attuali (<= 0 se il piano peggiora l'equilibrio), diff/pen = equilibrio del setup */
+/* penalita' di equilibrio per una coppia di livelli (0..1, posizione nel range di ciascun asse) tradotti nei valori assoluti dei range */
+const aeroAbs=(u,lf,lr)=>({f:u.dfF.min+lf*(u.dfF.max-u.dfF.min),r:u.dfR.min+lr*(u.dfR.max-u.dfR.min)});
+const aeroRatio=(u,lf,lr)=>{if(!u||!u.dfF||!u.dfR)return 0;const a=aeroAbs(u,lf,lr);return a.r>0?a.f/a.r:0};
+const aeroBalPen=(u,lf,lr)=>CAL.aeroBalK*Math.max(0,aeroRatio(u,lf,lr)-CAL.aeroBalThr);
+/* contributi: F e R lineari per asse, bal = penalita' prevista meno quella gia' presente alla lettura dei PP attuali (<= 0 se il piano peggiora l'equilibrio), ratio/pen = equilibrio del setup */
 function dAeroAxes(c,pl){
- const m=CAL.ppAeroF||CAL.ppAeroR?aeroLevels(c,pl):null,r={F:0,R:0,bal:0,diff:0,pen:0};
+ const m=CAL.ppAeroF||CAL.ppAeroR?aeroLevels(c,pl):null,r={F:0,R:0,bal:0,ratio:0,pen:0};
  if(m){
   if(m.F)r.F=(CAL.ppAeroF||0)*(m.F.E-m.F.C);if(m.R)r.R=(CAL.ppAeroR||0)*(m.R.E-m.R.C);
-  if(m.F&&m.R){r.diff=m.F.E-m.R.E;r.pen=aeroBalPen(m.F.E,m.R.E);r.bal=-(r.pen-aeroBalPen(m.F.C,m.R.C))}
+  if(m.F&&m.R){const u=c.ae.Rg;r.ratio=aeroRatio(u,m.F.E,m.R.E);r.pen=aeroBalPen(u,m.F.E,m.R.E);r.bal=-(r.pen-aeroBalPen(u,m.F.C,m.R.C))}
  }
  return r;
 }
@@ -1432,7 +1434,7 @@ function paintAero(){
  const sg=x=>(x>=0?'+':'−')+Math.abs(x).toFixed(1);let t;
  if(!CAL.ppAeroF&&!CAL.ppAeroR)t=tr('Coefficienti aero non ancora inseriti: senza le quattro letture l\'aero non entra nei PP stimati.','Downforce coefficients not entered yet: without the four readings downforce does not enter the PP estimate.');
  else{const d=dAeroAxes(car,plan);t=tr(`Contributo ai PP: anteriore ${sg(d.F)}, posteriore ${sg(d.R)}${d.bal?`, equilibrio ${sg(d.bal)}`:''}, totale ${sg(d.F+d.R+d.bal)}. Su tutto il range: anteriore ${sg(CAL.ppAeroF)}, posteriore ${sg(CAL.ppAeroR)}.`,`PP contribution: front ${sg(d.F)}, rear ${sg(d.R)}${d.bal?`, balance ${sg(d.bal)}`:''}, total ${sg(d.F+d.R+d.bal)}. Over the full range: front ${sg(CAL.ppAeroF)}, rear ${sg(CAL.ppAeroR)}.`);
-  if(d.pen>.5)t+=' '+tr(`Attenzione: anteriore troppo carico rispetto al posteriore (livello anteriore superiore di ${pc(d.diff)} del range, soglia ${pc(CAL.aeroBalThr)}): il gioco toglie circa ${d.pen.toFixed(0)} PP e la stabilità peggiora.`,`Warning: front too loaded compared with the rear (front level ${pc(d.diff)} of the range above the rear, threshold ${pc(CAL.aeroBalThr)}): the game takes away about ${d.pen.toFixed(0)} PP and stability suffers.`);
+  if(d.pen>.5)t+=' '+tr(`Attenzione: anteriore troppo carico rispetto al posteriore (rapporto anteriore/posteriore ${d.ratio.toFixed(2)}, soglia ${CAL.aeroBalThr}): il gioco toglie circa ${d.pen.toFixed(0)} PP e la stabilità peggiora.`,`Warning: front too loaded compared with the rear (front/rear ratio ${d.ratio.toFixed(2)}, threshold ${CAL.aeroBalThr}): the game takes away about ${d.pen.toFixed(0)} PP and stability suffers.`);
   if(!(aeroSlope(m)>1e-6))t+=' '+tr('Su questa auto ridurre la deportanza di entrambi gli assi non abbassa i PP: la leva automatica non è disponibile (puoi comunque modificare i valori a mano, il calcolo ne tiene conto).','On this car lowering downforce on both axles does not lower the PP: the automatic lever is not available (you can still edit the values by hand and the calculation accounts for them).')}
  el.textContent=lvTxt+' '+t;
 }
