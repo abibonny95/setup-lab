@@ -489,6 +489,9 @@ const GN0=6;
 const gearRange=(k,n)=>{const f=n>1?(k-1)/(n-1):0,l=(a,b)=>a*Math.pow(b/a,f);return [+l(2.4,.45).toFixed(3),+l(4.8,1.1).toFixed(3)]};
 function gearDefaults(n){const o={};for(let i=1;i<=10;i++){const [a,b]=gearRange(Math.min(i,n),n);o['g'+i]={min:a,max:b,step:.001}}return o}
 const PK=Object.fromEntries(P.map(p=>[p.k,p]));
+/* Parametri con valore assoluto (unita' del gioco): il generatore calcola il valore ottimo e lo LIMITA al range dell'utente (saturazione), senza riscalarlo.
+   Gli altri (altezza, livelli aero, rapporti, velocita') sono posizioni nel range: i range reali variano molto da auto ad auto (altezza 55-80 contro 60-130 mm). Scelta dell'utente. */
+const ABS=new Set(['freqF','freqR','camF','camR','toeF','toeR','lsdI','lsdA','lsdB','fI','fA','fB','compF','compR','extF','extR','arbF','arbR','bb','split','rsa']);
 /* componenti che incidono sui PP: ECU, limitatore, zavorra (peso e posizione) */
 const PL=[
  {k:'ecu',l:'ECU: potenza',u:'%',r:[50,100,1,0],c:'ecu'},
@@ -606,7 +609,7 @@ function gen(c,R,INV,lv){
   if(q.awd&&L!=='4WD')continue; if(!has(c,q.need))continue; if(q.gear&&q.gear>ng)continue;
   let v=o[q.k]; if(invOf(q,INV))v=-v;
   const [a,b]=q.r, u=R[q.k];
-  let out=u.min+((v-a)/(b-a))*(u.max-u.min);
+  let out=ABS.has(q.k)?v:u.min+((v-a)/(b-a))*(u.max-u.min);
   out=Math.round(out/u.step)*u.step;
   S[q.k]=+clamp(out,u.min,u.max).toFixed(decs(u.step));
  }
@@ -1173,11 +1176,11 @@ function applyFix(i){
 }
 /* quando cambia un limite, i valori già presenti mantengono la posizione relativa nel nuovo range */
 function applyRange(k,n){
- const old=R[k],mv=v=>{if(v==null)return v;const t=(v-old.min)/((old.max-old.min)||1);return +clamp(Math.round((n.min+t*(n.max-n.min))/n.step)*n.step,n.min,n.max).toFixed(decs(n.step))};
+ const old=R[k],mv=v=>{if(v==null)return v;if(ABS.has(k))return +clamp(Math.round(v/n.step)*n.step,n.min,n.max).toFixed(decs(n.step));const t=(v-old.min)/((old.max-old.min)||1);return +clamp(Math.round((n.min+t*(n.max-n.min))/n.step)*n.step,n.min,n.max).toFixed(decs(n.step))};
  if(S[k]!=null)S[k]=mv(S[k]);if(B[k]!=null)B[k]=mv(B[k]);if(A&&A[k]!=null)A[k]=mv(A[k]);
  if(PLK[k])plan[k]=mv(plan[k]);
  R[k]=n;buildGroups();paintFx();if(PLK[k])renderPP();save();
- toast(tr('Intervallo aggiornato: i valori esistenti sono stati riscalati.','Range updated: existing values were rescaled.'));
+ toast(ABS.has(k)?tr('Intervallo aggiornato: i valori esistenti sono stati limitati al nuovo intervallo.','Range updated: existing values were clamped to the new range.'):tr('Intervallo aggiornato: i valori esistenti sono stati riscalati.','Range updated: existing values were rescaled.'));
 }
 function refOf(k){
  if(A&&A[k]!=null)return {v:A[k],l:tr('vs misurato','vs measured')};
